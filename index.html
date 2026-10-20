@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#087f8c">
+  <meta name="description" content="Leituras de hidrômetro, fotos e relatórios para condomínios.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./styles.css">
+  <title>HidroCondo — Água sob controle</title>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <main class="layout">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="HidroCondo início">
+        <span class="brand-icon">💧</span>
+        <span><strong>HidroCondo</strong><small>Água sob controle</small></span>
+      </a>
+      <div id="account-top" class="account-top" hidden>
+        <span id="top-condo" class="top-condo"></span>
+        <button id="logout" class="btn btn-ghost btn-small" type="button">Sair</button>
+      </div>
+    </header>
+
+    <section id="screen-loading" class="center-panel">
+      <div class="loading-spinner"></div>
+      <p>Carregando HidroCondo...</p>
+    </section>
+
+    <section id="screen-setup" class="center-panel" hidden>
+      <div class="icon-feature">⚙️</div>
+      <h1>Falta conectar o banco</h1>
+      <p>Copie <code>config.example.js</code> para <code>config.js</code> e preencha a URL e a chave pública do seu projeto Supabase.</p>
+      <p>Depois execute <code>sql/setup.sql</code> no SQL Editor. O tutorial está no arquivo <code>README.md</code>.</p>
+    </section>
+
+    <section id="screen-auth" class="auth-layout" hidden>
+      <div class="auth-intro">
+        <span class="eyebrow">ROTINA MAIS SIMPLES</span>
+        <h1>Da foto do hidrômetro ao relatório em minutos.</h1>
+        <p>O zelador registra. A síndica acompanha as medições online e recebe o relatório pelo WhatsApp.</p>
+        <div class="feature-bullets">
+          <span>✓ Fotos organizadas</span>
+          <span>✓ Consumo automático</span>
+          <span>✓ Histórico e gráficos</span>
+        </div>
+      </div>
+      <form id="auth-form" class="panel auth-card">
+        <div class="segmented" role="group" aria-label="Tipo de acesso">
+          <button id="auth-mode-login" type="button" class="selected">Entrar</button>
+          <button id="auth-mode-signup" type="button">Criar conta</button>
+        </div>
+        <h2 id="auth-title">Bem-vindo de volta</h2>
+        <label for="auth-email">E-mail</label>
+        <input id="auth-email" type="email" autocomplete="email" required placeholder="voce@exemplo.com">
+        <label for="auth-password">Senha</label>
+        <input id="auth-password" type="password" autocomplete="current-password" minlength="6" required placeholder="Mínimo de 6 caracteres">
+        <label for="auth-name" id="auth-name-label" hidden>Seu nome</label>
+        <input id="auth-name" type="text" autocomplete="name" maxlength="100" placeholder="Como você deseja aparecer" hidden>
+        <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Entrar</button>
+        <p class="help" id="auth-helper">Acesso exclusivo para pessoas autorizadas do condomínio.</p>
+      </form>
+    </section>
+
+    <section id="screen-onboard" class="onboard" hidden>
+      <div class="section-heading"><h1>Vamos configurar seu acesso</h1><p>Escolha como você vai usar o aplicativo.</p></div>
+      <div class="onboard-grid">
+        <form id="create-condo-form" class="panel">
+          <div class="tile-icon">🏢</div>
+          <h2>Sou síndica / administrador</h2>
+          <p>Crie o espaço do condomínio e compartilhe um convite com o zelador.</p>
+          <label for="new-condo-name">Nome do condomínio</label>
+          <input id="new-condo-name" required minlength="3" maxlength="120" placeholder="Ex.: Residencial das Flores">
+          <button class="btn btn-primary btn-block" type="submit">Criar condomínio</button>
+        </form>
+        <form id="join-condo-form" class="panel">
+          <div class="tile-icon">📷</div>
+          <h2>Sou zelador / responsável</h2>
+          <p>Use o código de convite enviado pela síndica para registrar as leituras.</p>
+          <label for="join-code">Código de convite</label>
+          <input id="join-code" required minlength="24" maxlength="24" autocomplete="off" placeholder="Cole o código aqui">
+          <button class="btn btn-secondary btn-block" type="submit">Entrar no condomínio</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="screen-app" hidden>
+      <div class="welcome-line"><div><span id="role-label" class="eyebrow"></span><h1 id="page-title">Visão geral</h1></div><button id="refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div>
+      <nav class="tabs" aria-label="Navegação principal">
+        <button type="button" data-tab="dashboard" class="active">📊 Painel</button>
+        <button type="button" data-tab="new">📷 Nova leitura</button>
+        <button type="button" data-tab="history">🗂 Histórico</button>
+        <button type="button" data-tab="settings">⚙️ Ajustes</button>
+      </nav>
+
+      <section id="tab-dashboard" class="tab-content">
+        <div class="toolbar"><label for="dash-meter">Hidrômetro</label><select id="dash-meter" aria-label="Selecione um hidrômetro"></select><span id="sync-label" class="hint"></span></div>
+        <div id="summary-grid" class="summary-grid"></div>
+        <div class="panel" id="dashboard-alert" hidden></div>
+        <div class="panel"><div class="panel-heading"><div><h2>Consumo por período</h2><p>Comparação das últimas medições</p></div></div><div id="chart" class="chart"></div></div>
+        <div class="panel"><div class="panel-heading"><div><h2>Última medição</h2><p>Consulte a foto, o resultado e compartilhe</p></div></div><div id="latest-detail"></div></div>
+      </section>
+
+      <section id="tab-new" class="tab-content" hidden>
+        <div class="panel narrow-form">
+          <div class="panel-heading"><div><h2>Registrar uma leitura</h2><p>Fotografe, confira os números e salve.</p></div></div>
+          <form id="reading-form">
+            <label for="new-meter">Hidrômetro</label><select id="new-meter" required></select>
+            <label for="reading-date">Data da leitura</label><input id="reading-date" type="date" required>
+            <div id="previous-reading" class="notice">Procurando leitura anterior...</div>
+            <label for="reading-photo">Foto do visor <span class="required">*</span></label>
+            <input id="reading-photo" type="file" accept="image/*" capture="environment">
+            <button id="ocr-button" type="button" class="btn btn-secondary btn-small" style="margin-top:12px" disabled>✨ Tentar reconhecer números (beta)</button>
+            <p id="ocr-status" class="help" aria-live="polite"></p>
+            <div id="photo-preview" class="photo-preview" hidden><img id="preview-image" alt="Foto do hidrômetro para conferência"></div>
+            <p class="help">A foto comprova a leitura. O reconhecimento experimental pode falhar: confirme o número no visor antes de salvar.</p>
+            <div class="meter-inputs">
+              <div><label for="whole-reading">Parte inteira (m³)</label><input id="whole-reading" inputmode="numeric" required placeholder="4064"><small>Ex.: 4064 ou 4.064</small></div>
+              <div><label for="decimal-reading">Decimais</label><input id="decimal-reading" inputmode="numeric" maxlength="3" value="000" required placeholder="959"><small>Ex.: 959 (ou 000)</small></div>
+            </div>
+            <div class="notice notice-info" id="live-consumption">Preencha a leitura para calcular.</div>
+            <button id="save-reading" class="btn btn-primary btn-block" type="submit">💾 Salvar leitura</button>
+            <p class="help">A foto é obrigatória para o zelador. A síndica pode cadastrar uma leitura inicial sem foto para importar o histórico.</p>
+          </form>
+        </div>
+      </section>
+
+      <section id="tab-history" class="tab-content" hidden>
+        <div class="panel">
+          <div class="panel-heading"><div><h2>Histórico de leituras</h2><p>Consulte medições, fotos e exporte os dados</p></div><button id="export-csv" type="button" class="btn btn-secondary btn-small">↓ CSV</button></div>
+          <div class="toolbar"><label for="history-meter">Hidrômetro</label><select id="history-meter"></select></div>
+          <div id="history-list" class="history-list"></div>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="tab-content" hidden>
+        <div class="panel"><h2>Condomínio</h2><p id="settings-condo" class="hint"></p><p id="settings-role" class="hint"></p></div>
+        <div id="admin-settings" class="panel" hidden>
+          <h2>Convite para o zelador</h2><p>Compartilhe o código abaixo <strong>somente com pessoas autorizadas</strong>. Quem usar o código terá acesso ao histórico e às fotos do condomínio.</p>
+          <div class="invite-bar"><code id="invite-code">Carregando...</code><button id="copy-code" class="btn btn-secondary btn-small" type="button">Copiar</button></div>
+          <h2>Adicionar hidrômetro</h2>
+          <form id="meter-form" class="inline-form"><input id="meter-name" required minlength="2" maxlength="100" placeholder="Ex.: Bloco B"><button class="btn btn-secondary" type="submit">Adicionar</button></form>
+        </div>
+        <div class="panel"><h2>Sobre o aplicativo</h2><p>Fotos protegidas, leituras em m³ com três casas decimais e cálculos automáticos. Os dados são sincronizados online; o envio de medição exige internet.</p><p>Para evitar perda de dados, exporte o CSV periodicamente. Não compartilhe senhas nem a chave secreta do Supabase.</p></div>
+      </section>
+    </section>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.1.0</span> • Feito para simplificar a rotina do condomínio</footer>
+  </main>
+  <dialog id="edit-dialog" class="dialog">
+    <form id="edit-form">
+      <h2>Corrigir medição</h2>
+      <p class="help">Apenas a síndica pode corrigir. A mudança fica registrada para auditoria.</p>
+      <input id="edit-id" type="hidden">
+      <label for="edit-date">Data</label><input id="edit-date" type="date" required>
+      <div class="meter-inputs"><div><label for="edit-whole">Parte inteira</label><input id="edit-whole" required></div><div><label for="edit-decimal">Decimais</label><input id="edit-decimal" required maxlength="3"></div></div>
+      <label for="edit-reason">Motivo da correção</label><textarea id="edit-reason" rows="3" required minlength="5" placeholder="Ex.: número transcrito incorretamente"></textarea>
+      <div class="dialog-actions"><button type="button" id="cancel-edit" class="btn btn-ghost">Cancelar</button><button type="submit" class="btn btn-primary">Salvar correção</button></div>
+    </form>
+  </dialog>
+  <script src="./config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

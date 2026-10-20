@@ -1,6 +1,7 @@
 import {parseHistoricalText, previewHistorical} from './historical.js';
 import {readValue, toMillis, formatM3, buildIntervals, localDate, fmtDate} from './math.js';
 import {getWaterInsights} from './analysis.js';
+import {parseWeeklyLimit,evaluateWeeklyLimit,weeklyLimitMessage} from './limits.js';
 
 // All demonstration database access occurs via server-side authorized RPCs.
 // Demo photos are local previews only; they are NEVER uploaded to Supabase Storage.
@@ -23,14 +24,15 @@ const $=id=>document.getElementById(id);
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const dateTime=iso=>new Date(iso).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
 
-export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}){
- const ctx={space:null,token:null,role:null,data:null,timer:null,photo:null,photoUrl:null,busy:false,links:null};
+export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup,showTour}){
+ const ctx={space:null,token:null,role:null,data:null,timer:null,photo:null,photoUrl:null,busy:false,links:null,activeTab:null};
  const rpc=async(fn,args={})=>{const {data,error}=await db.rpc(fn,args);if(error)throw error;return data;};
  const warn=(err)=>{console.error(err);toast(err?.message||String(err),true);};
  const working=async(fn)=>{if(ctx.busy)return;ctx.busy=true;try{await fn();}catch(err){warn(err);}finally{ctx.busy=false;}};
  function clearPhoto(){if(ctx.photoUrl)URL.revokeObjectURL(ctx.photoUrl);ctx.photo=null;ctx.photoUrl=null;const img=$('demo-photo-preview');img.hidden=true;img.removeAttribute('src');$('demo-camera').value='';$('demo-gallery').value='';}
  function stop(){if(ctx.timer){clearInterval(ctx.timer);ctx.timer=null;}clearPhoto();ctx.space=null;ctx.role=null;ctx.data=null;}
- function welcome(){stop();ctx.token=new URLSearchParams(location.search).get('demo');$('demo-accept').checked=false;$('demo-enter').disabled=true;screens('demo-welcome');}
+ function welcome(){stop();ctx.token=new URLSearchParams(location.search).get('demo');const accepted=sessionStorage.getItem(`hc_demo_accepted_${ctx.token}`)==='1';$('demo-accept').checked=accepted;$('demo-enter').disabled=!accepted;screens('demo-welcome');if(accepted)setTimeout(()=>working(enter),50);}
+ function tourOnce(mode){const key=`hc_tour_v070_${mode}`;if(!localStorage.getItem(key)){localStorage.setItem(key,'1');setTimeout(()=>showTour?.(mode),250);}}
  async function enter(){
   if(!$('demo-accept').checked)throw Error('Confirme que entendeu as condições do ambiente de testes.');
   const {data:existing,error:err}=await db.auth.getUser();
@@ -43,6 +45,7 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
   try{claim=await rpc('hc_demo_redeem',{p_token:ctx.token});}
   catch(e){if(/vencid|encerrad|expirad/i.test(e.message)){ended();return;}throw e;}
   ctx.space=claim.space_id;ctx.role=claim.role;
+  sessionStorage.setItem(`hc_demo_accepted_${ctx.token}`,'1');
   $('demo-space-name').textContent=claim.name;
   $('demo-role').textContent=claim.role==='sindico'?'Síndico(a) de demonstração':'Zelador(a) de demonstração';
   $('demo-expiry').textContent=dateTime(claim.expires_at);
@@ -55,6 +58,9 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
   screens('demo');
   demoTab(ctx.role==='sindico'?'overview':'new');
   await refresh();
+  const tab=sessionStorage.getItem(`hc_demo_tab_${ctx.space}`);
+  if(tab&&['overview','new','history','past'].includes(tab))demoTab(tab);
+  tourOnce(ctx.role==='sindico'?'demo-manager':'demo-worker');
   ctx.timer=setInterval(()=>{if(ctx.data?.expires_at&&new Date(ctx.data.expires_at).getTime()<=Date.now())ended();else refresh().catch(e=>{if(/terminou|revogad|vencid/i.test(e.message))ended();else console.warn(e);});},30000);
  }
  async function refresh(){
@@ -64,6 +70,8 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
  }
  function ended(){if(ctx.timer)clearInterval(ctx.timer);ctx.timer=null;screens('demo-ended');}
  function demoTab(tab){
+  ctx.activeTab=tab;
+  if(ctx.space)sessionStorage.setItem(`hc_demo_tab_${ctx.space}`,tab);
   for(const el of document.querySelectorAll('[data-demo-tab]'))el.classList.toggle('active',el.dataset.demoTab===tab);
   for(const id of ['overview','new','history','past'])$('demo-tab-'+id).hidden=id!==tab;
   if(ctx.role==='zelador'&&tab==='overview')$('demo-manager-stats').hidden=true;
@@ -77,6 +85,10 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
   $('demo-consumption').textContent=last?.consumed!==null&&last?.consumed!==undefined?`${formatM3(last.consumed)} m³`:'—';
   const insight=getWaterInsights(rows.map(r=>({...r,meter_id:'demo'})),last?.measured_on);
   $('demo-insight').textContent=insight.short;
+  const comparison=evaluateWeeklyLimit(last,d.weekly_limit_m3);
+  const box=$('demo-limit-result');box.className='panel limit-report '+(comparison.status==='above'?'limit-above':comparison.status==='within'?'limit-within':'');
+  box.textContent=weeklyLimitMessage(comparison,{fictional:true});
+  if(document.activeElement!==$('demo-limit-input'))$('demo-limit-input').value=d.weekly_limit_m3??'';
   const valid=intervals.filter(i=>i.consumed!==null&&i.consumed>=0).slice(-9);
   const max=Math.max(1,...valid.map(i=>i.consumed));
   $('demo-chart').innerHTML=valid.map(i=>`<div class="bar-col"><span class="value">${(i.consumed/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})}</span><div class="bar-track"><div class="bar" style="height:${Math.max(2,Math.round(i.consumed/max*100))}%"></div></div><span class="date">${fmtDate(i.measured_on).slice(0,5)}</span></div>`).join('');
@@ -112,18 +124,31 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
   const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='hidrocondo-DEMONSTRACAO.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
  }
  function shareDemo(){const s=demoSummary(ctx.data?.readings||[]);const t=`HIDROCONDO — DEMONSTRAÇÃO (DADOS FICTÍCIOS)\n${ctx.data.name}\nÚltima leitura: ${s.last?formatM3(toMillis(s.last.value_m3))+' m³':'sem dados'}\nConsumo no último período: ${s.last?.consumed!==null&&s.last?.consumed!==undefined?formatM3(s.last.consumed)+' m³':'indisponível'}\nEstes números são apenas de teste e não representam consumo real.`;if(navigator.share)navigator.share({text:t,title:'HidroCondo — DEMONSTRAÇÃO'}).catch(()=>navigator.clipboard?.writeText(t));else navigator.clipboard.writeText(t).then(()=>toast('Relatório demonstrativo copiado.')).catch(()=>toast(t));}
- async function leave(toSignup=false){stop();history.replaceState({},'',homeUrl());const {data:{user}}=await db.auth.getUser();if(user?.is_anonymous){await db.auth.signOut();}await goHome();if(toSignup)startSignup();}
- async function showAdmin(){screens('demo-admin');$('demo-admin-new-links').hidden=true;await loadAdmin();}
+ async function leave(toSignup=false){const token=ctx.token;if(token)sessionStorage.removeItem(`hc_demo_accepted_${token}`);stop();history.replaceState({},'',homeUrl());const {data:{user}}=await db.auth.getUser();if(user?.is_anonymous){await db.auth.signOut();}await goHome();if(toSignup)startSignup();}
+ async function showAdmin(){sessionStorage.setItem('hc_support_view','demo-admin');screens('demo-admin');$('demo-admin-new-links').hidden=true;await loadAdmin();tourOnce('demo-admin');}
  async function loadAdmin(){const rows=await rpc('hc_demo_list');
-  $('demo-admin-list').innerHTML=rows.length?rows.map(r=>`<article class="demo-entry demo-admin-entry"><div><strong>${escape(r.name)}</strong><small>Criado: ${dateTime(r.created_at)} · Termina: ${dateTime(r.expires_at)} · ${demoStatus(r.expires_at,r.revoked)}</small></div>${demoStatus(r.expires_at,r.revoked)==='Ativa'?`<button type="button" class="btn btn-secondary btn-small" data-demo-end="${r.id}">Encerrar agora</button>`:''}</article>`).join(''):'<p class="help">Nenhuma demonstração criada. Crie um ambiente fictício para começar.</p>';
+  $('demo-admin-list').innerHTML=rows.length?rows.map(r=>`<article class="demo-entry demo-admin-entry"><div><strong>${escape(r.name)}</strong><small>Criado: ${dateTime(r.created_at)} · Termina: ${dateTime(r.expires_at)} · ${demoStatus(r.expires_at,r.revoked)}</small></div><div class="demo-actions">${demoStatus(r.expires_at,r.revoked)==='Ativa'?`<button type="button" class="btn btn-primary btn-small" data-demo-show="${r.id}">🔗 Ver links</button><button type="button" class="btn btn-secondary btn-small" data-demo-end="${r.id}">Encerrar</button>`:''}</div></article>`).join(''):'<p class="help">Nenhuma demonstração criada. Crie um ambiente fictício para começar.</p>';
  }
- async function createAdmin(e){e.preventDefault();const name=$('demo-admin-name').value.trim();const hours=Number($('demo-admin-hours').value);const max=Number($('demo-admin-uses').value);
-  const data=await rpc('hc_demo_create',{p_name:name,p_hours:hours,p_max_uses:max});
-  const base=homeUrl();ctx.links={manager:demoLink(base,data.manager_token),worker:demoLink(base,data.worker_token)};
+ function showLinks(data){
+  ctx.links={manager:demoLink(homeUrl(),data.manager_token),worker:demoLink(homeUrl(),data.worker_token)};
   $('demo-manager-link').value=ctx.links.manager;$('demo-worker-link').value=ctx.links.worker;
   $('demo-admin-expiry').textContent=dateTime(data.expires_at);
   $('demo-admin-new-links').hidden=false;
-  $('demo-admin-name').value='';await loadAdmin();toast('Demonstração criada. Copie os dois links agora.');
+  $('demo-admin-new-links').scrollIntoView({behavior:'smooth',block:'start'});
+ }
+ async function viewLinks(id){
+  let data=await rpc('hc_demo_links',{p_space:id});
+  if(!data.recoverable){
+    if(!confirm('Esta demonstração foi criada antes da v0.7.0. Não é possível recuperar os links originais. Deseja gerar novos links? Os anteriores deixarão de funcionar; participantes que já entraram continuarão até o fim da demonstração.'))return;
+    data=await rpc('hc_demo_rotate_links',{p_space:id});
+    toast('Convites antigos invalidados. Novos links criados.');
+  }
+  showLinks(data);
+ }
+ async function createAdmin(e){e.preventDefault();const name=$('demo-admin-name').value.trim();const hours=Number($('demo-admin-hours').value);const max=Number($('demo-admin-uses').value);
+  const data=await rpc('hc_demo_create',{p_name:name,p_hours:hours,p_max_uses:max});
+  showLinks(data);
+  $('demo-admin-name').value='';await loadAdmin();toast('Demonstração criada. Você pode ver os links novamente nesta lista.');
  }
  function init(){
   $('demo-accept').addEventListener('change',()=>{$('demo-enter').disabled=!$('demo-accept').checked;});
@@ -132,13 +157,15 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
   $('demo-expired-home').addEventListener('click',()=>working(leave));
   $('demo-leave').addEventListener('click',()=>working(leave));
   $('demo-signup').addEventListener('click',()=>working(()=>leave(true)));
-  $('demo-admin-back').addEventListener('click',()=>working(goHome));
+  $('demo-admin-back').addEventListener('click',()=>working(async()=>{sessionStorage.removeItem('hc_support_view');await goHome();}));
   $('demo-admin-form').addEventListener('submit',e=>working(()=>createAdmin(e)));
   $('demo-admin-refresh').addEventListener('click',()=>working(loadAdmin));
+  $('demo-admin-list').addEventListener('click',e=>{const b=e.target.closest('button[data-demo-show]');if(b)working(()=>viewLinks(b.dataset.demoShow));});
   $('demo-admin-list').addEventListener('click',e=>{const b=e.target.closest('button[data-demo-end]');if(b&&confirm('Encerrar agora? Os visitantes perderão o acesso e os dados são descartáveis.'))working(async()=>{await rpc('hc_demo_revoke',{p_space:b.dataset.demoEnd});await loadAdmin();toast('Demonstração encerrada.');});});
   for(const id of ['demo-copy-manager','demo-copy-worker'])$(id).addEventListener('click',()=>working(async()=>{await navigator.clipboard.writeText(id==='demo-copy-manager'?ctx.links.manager:ctx.links.worker);toast('Link copiado.');}));
   for(const b of document.querySelectorAll('[data-demo-tab]'))b.addEventListener('click',()=>demoTab(b.dataset.demoTab));
   $('demo-reload').addEventListener('click',()=>working(refresh));
+  $('demo-limit-form').addEventListener('submit',e=>working(async()=>{e.preventDefault();if(ctx.role!=='sindico')throw Error('Somente síndico(a) de teste altera a referência.');const value=parseWeeklyLimit($('demo-limit-input').value);await rpc('hc_demo_set_limit',{p_space:ctx.space,p_weekly_limit:value});await refresh();toast('Referência semanal fictícia atualizada.');}));
   $('demo-reading-form').addEventListener('submit',e=>working(()=>saveReading(e)));
   $('demo-history-form').addEventListener('submit',e=>working(()=>saveHistory(e)));
   for(const id of ['demo-camera','demo-gallery'])$(id).addEventListener('change',e=>{try{selectPhoto(e.target.files?.[0]);}catch(err){warn(err);}});
@@ -147,5 +174,5 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup}
   $('demo-share').addEventListener('click',shareDemo);
   $('demo-print').addEventListener('click',()=>window.print());
  }
- return {init,welcome,showAdmin,stop};
+ return {init,welcome,showAdmin,stop,selectTab:demoTab,currentRole:()=>ctx.role};
 }

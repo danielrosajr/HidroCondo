@@ -141,6 +141,7 @@
         <div class="toolbar"><label for="dash-meter">Hidrômetro</label><select id="dash-meter" aria-label="Selecione um hidrômetro"></select><span id="sync-label" class="hint"></span></div>
         <div id="summary-grid" class="summary-grid"></div>
         <div class="panel"><h2>Resumo em linguagem simples</h2><div id="plain-summary" class="prose-summary"></div><button type="button" class="btn btn-ghost btn-small" id="analysis-toggle">Ver análise completa</button><div id="full-analysis" class="analysis-detail" hidden></div></div>
+        <div id="limit-alert" class="panel limit-report" aria-live="polite"></div>
         <div class="panel" id="dashboard-alert" hidden></div>
         <div class="panel"><div class="panel-heading"><div><h2>Consumo por período</h2><p>Comparação das últimas medições</p></div></div><div id="chart" class="chart"></div></div>
         <div class="panel"><div class="panel-heading"><div><h2>Última medição</h2><p>Consulte a foto, o resultado e compartilhe</p></div></div><div id="latest-detail"></div></div>
@@ -232,7 +233,16 @@
           <div id="support-invite-box" class="invite-bar" hidden><input id="support-invite-link" readonly aria-label="Link de suporte"><button id="copy-support-link" class="btn btn-secondary btn-small" type="button">Copiar link</button></div>
           <div id="active-support" class="support-list"></div>
           <hr class="soft-line">
-          <h2>Adicionar hidrômetro</h2>
+          <h2>Referência de consumo por hidrômetro</h2>
+          <p class="help">Defina um limite indicativo em m³ para 7 dias, como 80. Em períodos de 16 dias, o aplicativo calcula o limite proporcional. Isto não é um limite legal e não confirma vazamento.</p>
+          <form id="meter-limit-form" class="narrow-form">
+            <label for="limit-meter">Hidrômetro</label><select id="limit-meter" required></select>
+            <label for="limit-value">Referência máxima em m³ por 7 dias</label>
+            <input id="limit-value" type="text" inputmode="decimal" placeholder="Ex.: 80 (ou deixe vazio para desativar)">
+            <button class="btn btn-primary btn-block" type="submit">Salvar referência semanal</button>
+            <p id="limit-saved-note" class="help" role="status"></p>
+          </form>
+          <hr class="soft-line"><h2>Adicionar hidrômetro</h2>
           <form id="meter-form" class="inline-form"><input id="meter-name" required minlength="2" maxlength="100" placeholder="Ex.: Bloco B"><button class="btn btn-secondary" type="submit">Adicionar</button></form>
         </div>
         <div class="panel"><h2>Sobre o aplicativo</h2><p>Fotos protegidas, leituras em m³ com três casas decimais e cálculos automáticos. Os dados são sincronizados online; o envio de medição exige internet.</p><p>Para evitar perda de dados, exporte o CSV periodicamente. Não compartilhe senhas nem a chave secreta do Supabase.</p></div>
@@ -282,6 +292,8 @@
             <div class="summary-tile"><div class="metric-title">Consumo do último período</div><div id="demo-consumption" class="metric">—</div></div>
           </div>
           <div class="panel"><h2>Resumo automático (fictício)</h2><p id="demo-insight"></p><div id="demo-chart" class="chart"></div></div>
+          <div id="demo-limit-result" class="panel limit-report" aria-live="polite"></div>
+          <form id="demo-limit-form" class="panel narrow-form"><h2>Referência semanal de demonstração</h2><p class="help">O limite de 80 m³/7 dias é apenas um exemplo e pode ser alterado. O resultado considera os dias entre as leituras.</p><label for="demo-limit-input">Limite em m³ por 7 dias</label><input id="demo-limit-input" type="text" inputmode="decimal" placeholder="Ex.: 80"><button type="submit" class="btn btn-secondary btn-block">Atualizar referência de teste</button></form>
         </div>
         <div class="panel"><h2>📤 Relatório de demonstração</h2><p>Inclui aviso de dados fictícios. Você pode copiar/compartilhar um resumo ou imprimir a tela como PDF.</p><div class="demo-actions"><button id="demo-share" class="btn btn-primary" type="button">Compartilhar texto</button><button id="demo-print" class="btn btn-secondary" type="button">Imprimir / Salvar PDF</button></div></div>
       </section>
@@ -320,11 +332,11 @@
       <div class="demo-admin-header"><div><span class="eyebrow">SUPORTE TÉCNICO AUTORIZADO</span><h1>🧪 Demonstrações por convite</h1><p>Gere dois links separados para teste de síndico(a) e zelador(a), sem necessidade de e-mail ou senha.</p></div><button id="demo-admin-back" class="btn btn-ghost" type="button">← Voltar</button></div>
       <div class="demo-banner"><strong>⚠️ SOMENTE DADOS FICTÍCIOS</strong><span>Não envie links de produção. Não use dados reais de clientes. Os testes expiram e são descartáveis.</span></div>
       <form id="demo-admin-form" class="panel narrow-form"><h2>Criar condomínio fictício</h2><label for="demo-admin-name">Nome de teste</label><input id="demo-admin-name" required minlength="3" maxlength="100" placeholder="Ex.: HidroCondo Demo 001"><div class="historical-quick-row"><div><label for="demo-admin-hours">Validade</label><select id="demo-admin-hours"><option value="24">24 horas</option><option value="72" selected>72 horas</option><option value="168">7 dias</option></select></div><div><label for="demo-admin-uses">Convidados por perfil</label><select id="demo-admin-uses"><option value="1" selected>1 pessoa</option><option value="3">3 pessoas</option><option value="5">5 pessoas</option></select></div></div><button type="submit" class="btn btn-primary btn-block btn-xl">Gerar os dois links</button><p class="help">Somente suporte autorizado pode criar. Cada convite possui limite de usos e expira automaticamente.</p></form>
-      <div id="demo-admin-new-links" class="panel" hidden><h2>✅ Convites criados</h2><p>Copie e guarde os links agora. Os tokens não podem ser recuperados posteriormente.</p><p>Válidos até: <strong id="demo-admin-expiry"></strong></p><label for="demo-manager-link">Link para síndico(a) de demonstração</label><div class="demo-link-row"><input id="demo-manager-link" readonly><button id="demo-copy-manager" type="button" class="btn btn-secondary">Copiar</button></div><label for="demo-worker-link">Link para zelador(a) de demonstração</label><div class="demo-link-row"><input id="demo-worker-link" readonly><button id="demo-copy-worker" type="button" class="btn btn-secondary">Copiar</button></div></div>
-      <div class="panel"><div class="panel-heading"><h2>Meus ambientes de demonstração</h2><button id="demo-admin-refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div><div id="demo-admin-list"></div></div>
+      <div id="demo-admin-new-links" class="panel" hidden><h2>✅ Convites criados</h2><p>Estes links poderão ser consultados novamente pelo administrador autorizado. Guarde-os com cuidado: cada link concede acesso temporário à demonstração.</p><p>Válidos até: <strong id="demo-admin-expiry"></strong></p><label for="demo-manager-link">Link para síndico(a) de demonstração</label><div class="demo-link-row"><input id="demo-manager-link" readonly><button id="demo-copy-manager" type="button" class="btn btn-secondary">Copiar</button></div><label for="demo-worker-link">Link para zelador(a) de demonstração</label><div class="demo-link-row"><input id="demo-worker-link" readonly><button id="demo-copy-worker" type="button" class="btn btn-secondary">Copiar</button></div></div>
+      <div class="panel"><div class="panel-heading"><h2>Meus ambientes de demonstração</h2><button id="demo-admin-refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div><p class="help">Em cada ambiente ativo, use “Ver links”. Para convites gerados antes da v0.7.0, use “Regenerar”: os links antigos serão invalidados, mas sessões já ativadas permanecem até o término.</p><div id="demo-admin-list"></div></div>
     </section>
 
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.6.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.7.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

@@ -1,96 +1,80 @@
-# HidroCondo v0.6.0-beta
+# HidroCondo v0.7.0-beta
 
-Mobile-first water-meter tracking PWA for condominiums. The application is written in Brazilian Portuguese, with engineering documentation and releases in English. Stack: static HTML/CSS/JavaScript, Supabase Auth/PostgreSQL RLS/Storage.
+Mobile-first Brazilian Portuguese condominium water-meter PWA, hosted as a static app with Supabase Auth/PostgreSQL RLS/private Storage. This version extends v0.6.0-beta without deleting any production reading, photograph, user, membership or demonstration workspace.
 
-## What's new: **invitation-only, no-signup demonstrations**
+## Features in v0.7.0
 
-A specifically authorized platform support account can create a **fictional demonstration workspace**. Each workspace contains 12 weeks of seeded, clearly labeled sample readings and produces two distinct invitation URLs:
+### Reopen demonstration invitations
 
-- **Manager demo**: dashboards, charts, consumption summary, history, approval/rejection of workers' historical submissions, manual readings, CSV and print-to-PDF.
-- **Worker demo**: short reading-registration flow, locally previewed camera/gallery photos (never uploaded), historical submissions for approval, history.
+**Support administrators** with `account_type='suporte'` and `can_create_condominiums=true` can open **Demonstrações → Meus ambientes de demonstração → Ver links** to retrieve the manager and worker invitation URLs **after a reload, background/foreground transition, or return to the home screen**. A new owner-scoped Supabase RPC returns the tokens. Invitation tokens for newly generated demo spaces are stored server-side in the private `hc_demo_invites.recovery_token` column; all demo tables remain RLS-protected and inaccessible by direct browser SELECT.
 
-Invitees open the link, read a large **TEST ONLY / FICTIONAL / DISPOSABLE DATA** warning, confirm it, then start using Supabase Anonymous Sign-In. No email or password is required. Both roles in the same demonstration workspace see shared *fictional* reading data synchronized online.
+**Existing v0.6 demonstration links cannot be recovered:** the earlier implementation saved *only a hash*. On an older space, **Ver links** offers a **confirmed regeneration**. Rotating invalidates unredeemed old links, but does not terminate visitor memberships already activated; the space expiration date does not change. A support user can only recover/rotate invitations for demonstration spaces they themselves created.
 
-### Disposable by design
+Bearer links confer temporary access to *fictional* data. Treat links as confidential, never post them publicly, and never use real readings or identifying personal information in demo workspaces. The demonstration disclaimer and sticky test-only banner remain in place. Guests cannot access production data and demo photos are never uploaded.
 
-**Never use real readings, personal information, real condominium names, or confidential photographs in a demo.**
+### Weekly consumption reference (not a legal/contractual threshold)
 
-- Sample readings are fake. Additional demonstration readings and review requests **are saved temporarily in separate PostgreSQL tables** so the two visitors can test the workflow; they are **not** copied to production tables or into a new paid account.
-- Camera/gallery photos are **displayed only as a temporary in-browser preview**. They are not stored, shared with managers or included in demo reports. Real HidroCondo continues to support saved photos; this feature is deliberately reduced in demo mode.
-- Browser storage/session loss, signing out, changing devices or running out of invitation uses can permanently cut off a visitor's access. **No data recovery is promised.**
-- Every demo expires server-side at 24 hours, 72 hours, or 7 days. The creator may revoke earlier. Tables are opportunistically purged once a new demo is created, if they expired **more than seven days earlier**; expiration stops all access immediately, but is not the same as immediate physical deletion.
-- An admin may generate **up to 20 active workspaces**, with an individual 1/3/5-person limit for each role. Invite tokens are returned **once**, and only their hashes are stored.
-- The manager and worker should use **different devices or separate private browser windows** when testing in parallel, because a signed-in identity cannot hold two different demo roles within the same workspace.
+Each **real** meter has an optional `weekly_limit_m3` configured in **Ajustes → Referência de consumo** by the condominium manager. The comparison is purely indicative; **80 m³/7 days is an example, not a proven rule**. We do not enforce or guess a monthly utility tariff, and the calculation does not diagnose leaks.
 
-## Required deployment steps for v0.5.0 → v0.6.0
+Calculation for two cumulative readings:
 
-1. **Back up** the production PostgreSQL database and private Storage photos. Make a staging copy if you can. Do not run old `setup.sql` again.
-2. In **Supabase → SQL Editor**, execute **`sql/upgrade_0_6_0.sql`**, after migrations 0.2.0 through 0.5.0. The new migration keeps existing production condominiums, readings, user memberships and photographs. It also strengthens production-membership helper functions and production worker-invitation redemption so anonymous demo users are refused.
-3. In **Supabase → Authentication → Providers / Sign-In Methods**, turn on **Anonymous Sign-Ins**. Supabase considers anonymous Auth users `authenticated` at the Postgres level, hence the strict separation in the SQL migration. **Do not enable anonymous sign-ins before the 0.6 RLS hardening has been applied and reviewed**.
-4. Upload files to your GitHub Pages deployment branch: replace `app.js`, `index.html`, `styles.css`, `sw.js`, `package.json`, `README.md`, `RELEASE_NOTES.md`; add `demo.js`, `sql/upgrade_0_6_0.sql`, `tests/demo.test.js`. Keep all other code, historic migrations, icons, and **your current configured `config.js` unchanged**. Never expose a secret/service-role key in a static site.
-5. Wait for Pages deployment, force-refresh or close/reopen the installed PWA. The new service worker shell version is `v0.6.0`.
-6. Sign in with a **platform support account** whose `account_type='suporte'` and `can_create_condominiums=true`. Open **🧪 Demonstrações** on the condominium picker or in the account header; create a fictional workspace, choose 24h/72h/7d and 1/3/5 persons per role, and copy **both** links immediately.
-7. Test the **manager link in browser A** and **worker link in browser B / incognito**. No signup is needed. Check that the worker submits a historical batch and manager approves it, then verify the fictional shared chart updates. Also test revocation and expiry.
+- `consumption_m3 = current_reading_m3 - previous_reading_m3`
+- `elapsed_days = days between the readings`
+- `weekly_equivalent_m3 = consumption_m3 × 7 ÷ elapsed_days`
+- `allowed_m3_for_period = configured_weekly_limit_m3 × elapsed_days ÷ 7`
+- Alert **above** if the normalized weekly consumption exceeds the configured reference; otherwise **within**.
 
-### How to authorize an existing platform support account
+Examples with a reference of **80 m³/7 days**:
 
-Run this in a *trusted* Supabase SQL Editor, replacing the email with the actual support account email. Do **not** grant this flag to ordinary accounts or visitors.
+- 83 m³ in **7 days** → 83 m³/7 days → **above**.
+- 83 m³ in **16 days** → 36.313 m³/7 days → **within**.
 
-```sql
-SELECT u.email, p.account_type, p.can_create_condominiums
-FROM auth.users AS u
-JOIN public.account_profiles AS p ON p.user_id=u.id
-WHERE lower(u.email) = lower('YOUR_SUPPORT_EMAIL@EXAMPLE.COM');
+The text displays both original dates/duration and normalized comparison, plus a note that the result is not proof of leakage. The reference is included in the latest WhatsApp report image/text and the full PDF summaries. Previous analyses based on observed periods remain available.
 
--- Only if the account is already account_type='suporte':
-UPDATE public.account_profiles p
-SET can_create_condominiums=true
-FROM auth.users u
-WHERE u.id=p.user_id
-  AND lower(u.email)=lower('YOUR_SUPPORT_EMAIL@EXAMPLE.COM')
-  AND p.account_type='suporte'
-RETURNING u.email,p.account_type,p.can_create_condominiums;
+Demo manager guests can adjust a separate **fictional 80 m³/7 days default** by using **Painel → Referência semanal de demonstração**. Only demo managers can change that setting; it does not affect production meters.
+
+### Guided mobile-first tutorial
+
+The **? Ajuda** action starts a spotlight-style interactive tour that darkens the screen and highlights relevant controls. Tours have **Próximo**, **Voltar**, **Pular tour**, Escape and arrow-key support. They cover manager, worker, support, demo-manager, demo-worker and demo-administration interfaces. The first run is triggered once for each role/version and may be reopened at any time. The tour never clicks a destructive action or submits data on behalf of the user. Text is in Brazilian Portuguese.
+
+### Better foreground/background session behavior
+
+- Supabase `TOKEN_REFRESHED`, `INITIAL_SESSION`, and `USER_UPDATED` no longer rebuild the screen; unchanged `SIGNED_IN` identities do not trigger a redundant bootstrap.
+- The current production tab and demo tab are restored from `sessionStorage` when the browser actually reloads.
+- Demo administration returns to the same screen after a reload when the support session is still valid.
+- Previously accepted demo invites may resume in the same tab if the session is still valid and the original link remains valid. Anonymous guest sessions can still be lost if browser storage is removed or invitations expire/rotate.
+
+## Upgrade from v0.6.0-beta
+
+1. **Back up database AND private Storage photos**. Create a staging project if possible. Ensure `sql/upgrade_0_6_0.sql` has already been run; don't rerun `setup.sql` or older migrations.
+2. In Supabase **SQL Editor**, execute **`sql/upgrade_0_7_0.sql` once**. It adds the per-meter limit, the demo invitation recovery field, the demo weekly limit, scoped server RPCs and RLS policy for managers to update their own meters. Existing old invites remain valid until you intentionally regenerate them.
+3. On the GitHub Pages deployment branch, **replace** `app.js`, `demo.js`, `index.html`, `styles.css`, `sw.js`, `README.md`, `RELEASE_NOTES.md`, `package.json` and **add** `limits.js`, `tour.js`, `sql/upgrade_0_7_0.sql`, `tests/limits.test.js`, `tests/tour.test.js`.
+4. **Keep `config.js` untouched.** The package intentionally contains `config.example.js` only; do not overwrite your configured connection. Never place Supabase secret/service-role keys in client code.
+5. Push the files to the branch used by Pages (usually `main`) without putting the entire project inside a new nested folder. Wait for the build, then hard refresh/reopen the PWA; the service worker cache is now `hidrocondo-shell-v0.7.0`.
+6. Sign in as support, open **Demonstrações**, and verify **Ver links** on a newly created space, then reload the app and retrieve the same URLs. Test an older v0.6 space with the explicit **Regenerar** confirmation.
+7. Sign in as an actual condominium manager and configure a limit for one meter. Record two **test** readings seven days apart (e.g., 3981 and 4064 → 83 m³), and inspect the reference comparison. Confirm that workers cannot modify reference limits.
+8. Open **? Ajuda** on manager/worker/demo screens and test the guided tour on Android, iOS Safari and a desktop browser. Check that returning from WhatsApp or backgrounding the app does not reset the current tab.
+
+## Security review / limitations
+
+- **Tokens are recoverable for new demo invitations**, hence are sensitive secrets stored server-side in the RLS-protected demo invitation table. No `authenticated` or `anon` grants permit direct table access. The `hc_demo_links` and `hc_demo_rotate_links` RPCs enforce ownership and specifically authorized support credentials; a demo guest can neither retrieve nor rotate links.
+- Rotating links revokes **unclaimed** invites, not existing demo memberships; revoke the entire demo workspace to end current visitors' access.
+- Threshold UPDATE uses a policy requiring `is_condo_admin`, with a trigger disallowing modification of immutable meter identity. Frontend visibility is not a security boundary.
+- This is still a beta. The Postgres migration and RLS enforcement must be tested **against a real staging Supabase instance** before production. JavaScript tests do not exercise Postgres policies or phone camera/WhatsApp integration.
+- Browser visual automation was unavailable in the authoring sandbox; verify the spotlight geometry on small screens. Manual field/device acceptance testing is required.
+- Demo anonymous sign-ins require abuse controls (e.g. verified CAPTCHA tokens) prior to broad public launch; do not relax existing RLS policies.
+- **Do not claim that 80 m³ is the condominium's real limit** without confirming what duration, meter and consumption rules the manager actually means.
+
+## Local tests
+
+```bash
+npm test
+npm run dev
 ```
 
-A normal `sindico` account is **not** a platform demo creator. The capability flag only authorizes creating demo spaces or new owned condos, not unrestricted entry into real client condos.
+## Versioning / GitHub
 
-### Abuse protection before broader public rollout
-
-Anonymous signup produces actual Supabase Auth rows and uses the `authenticated` PostgreSQL role. Existing production functions/policies must be audited whenever you add more features. Demonstration entry uses hard-to-guess, revocable, time-limited links, server-verified membership/role/expiry, limited rooms and capped records. These are **not** substitutes for CAPTCHA and broader abuse controls at scale.
-
-For public marketing campaigns, add a proper **Cloudflare Turnstile / hCaptcha integration** that passes its token to `signInAnonymously`, rate limiting, monitoring and operational cleanup of anonymous Auth users. **Do not simply turn on the project's global CAPTCHA requirement without implementing the associated client token flow**; that would break the current login paths. Read [Supabase anonymous sign-ins](https://supabase.com/docs/guides/auth/auth-anonymous) and [CAPTCHA protection](https://supabase.com/docs/guides/auth/auth-captcha).
-
-The demo is **not an alternative to a real billing trial**. Real tenants, subscriptions, trial conversion and production data migration are outside the scope of 0.6.0.
-
-## SQL and isolation overview
-
-The migration creates `hc_demo_spaces`, `hc_demo_invites`, `hc_demo_members`, `hc_demo_readings`, `hc_demo_submissions` with RLS enabled and **no direct browser table grants**. All demonstration actions use scoped `SECURITY DEFINER` RPCs:
-
-- `hc_demo_create`, `hc_demo_list`, `hc_demo_revoke`: platform support creator only (revocation only by owner).
-- `hc_demo_redeem`: 256-bit-class random token (two v4 UUIDs), hashed at rest, atomic usage-count check, role binding, server-side expiry.
-- `hc_demo_snapshot`: returns only rows belonging to the member's active demo space; worker sees only own proposals.
-- `hc_demo_add_reading`, `hc_demo_manager_history`: validated chronological insert (atomic for batch), limited max rows.
-- `hc_demo_submit_history`: worker-only pending proposal.
-- `hc_demo_review_history`: manager-only approval/rejection, atomic insertion, chronological conflict rejection.
-
-Existing production membership helpers and invite redemption reject `is_anonymous=true` identities. Production RLS remains enabled. Demo no-photo behavior does not change the existing production photo policy.
-
-## Testing and limitations
-
-Run `npm test` (Node.js) for calculation and input tests; syntax-check with `node --check app.js` and `node --check demo.js`. Automated tests do **not** replace live RLS tests. Before using with external invitees, use a staging Supabase project to verify:
-
-- An anonymous demo session **cannot read, update, create or join a real condominium**, even if it has a leaked legacy invite code.
-- A manager's demo link cannot read other demo spaces or production readings.
-- The worker cannot approve historical proposals or create a new demo space.
-- Links expire/revoke even with the browser left open, after the next request (client polls while visible).
-- Manager and worker views work on a 360-390 px Android device and on Safari/iPhone.
-- Existing real users continue to sign in and store their photos normally.
-
-**Not verified here:** execution of SQL in your actual Supabase, live cross-device sign-in, browser interactions on your phone, real CAPTCHA, production RLS behavior. No user data was modified while building the package. Always test on disposable data before sharing links.
-
-## GitHub
-
-- Commit: `feat: add isolated no-signup demo workspaces with expiring invites`
-- Tag: `v0.6.0-beta`
-- Release title: `HidroCondo v0.6.0-beta — Invitation-Only Demo Workspaces`
-- Mark as **Pre-release**. Tag only after deploying the updated commit.
+- Commit: `feat: add recoverable demo links, weekly consumption thresholds and guided tours`
+- Tag: `v0.7.0-beta`
+- Release title: `HidroCondo v0.7.0-beta — Demo Links, Weekly Limits & Guided Tours`
+- Mark as pre-release. Create the tag **after** the updated code and migration have been committed.

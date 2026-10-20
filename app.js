@@ -4,10 +4,13 @@ import {parseHistoricalText,previewHistorical} from './historical.js';
 import {mayCreateCondo,maySubmitHistory,mayApproveHistory} from './permissions.js';
 import {compressPhoto,formatPhotoBytes} from './photos.js';
 import {makeDemoController} from './demo.js';
+import {parseWeeklyLimit,evaluateWeeklyLimit,weeklyLimitMessage} from './limits.js';
+import {createGuidedTour} from './tour.js';
 
 const $ = id => document.getElementById(id);
 const STORE = 'hidrocondo-fotos';
 let demoController=null;
+let guidedTour=null;
 const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null,historyRequests:[],platformCreator:false,currentPhoto:null,historyPhotos:new Map()};
 const canCorrect = ()=>(state.role==='sindica'||state.role==='suporte')&&!state.previewWorker;
 const isManager = ()=>state.role==='sindica';
@@ -119,7 +122,8 @@ async function bootstrap(){
   $('after-save').hidden=true;
   await loadData();
   screens('app');
-  setTab(state.role==='zelador'?'new':'dashboard');
+  const resumeTab=sessionStorage.getItem(`hc_active_tab_${state.user.id}_${state.condo.id}`);
+  setTab(resumeTab|| (state.role==='zelador'?'new':'dashboard'));
   if(isManager())await loadSupportGrants();
   showTutorialOnce();
 }
@@ -136,12 +140,12 @@ async function loadData(){
   for(const x of [m,r,a,h])if(x.error)throw x.error;
   state.meters=m.data||[];state.readings=r.data||[];state.audits=a.data||[];state.historyRequests=h.data||[];
   if(!state.meters.some(meter=>meter.id===state.meterId))state.meterId=state.meters[0]?.id||null;
-  renderMeters();renderDashboard();renderHistory();renderHistoryRequests();updatePrevious();updateLive();
+  renderMeters();renderLimitSettings();renderDashboard();renderHistory();renderHistoryRequests();updatePrevious();updateLive();
   $('meter-input-wrap').hidden=state.meters.length<=1;
   $('sync-label').textContent=`Atualizado ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · automaticamente a cada 30 s`;
 }
 function renderMeters(){
-  for(const id of ['dash-meter','history-meter','new-meter','historical-meter']){
+  for(const id of ['dash-meter','history-meter','new-meter','historical-meter','limit-meter']){
     const select=$(id),saved=id==='new-meter'?select.value:state.meterId;
     select.replaceChildren(...state.meters.map(m=>{const el=document.createElement('option');el.value=m.id;el.textContent=m.name;return el;}));
     select.value=state.meters.some(m=>m.id===saved)?saved:(state.meterId||'');
@@ -176,6 +180,7 @@ function setTab(tab){
   if(state.previewWorker&&tab==='import')tab='new';
   if(state.role==='suporte'&&['new','import'].includes(tab)&&!state.previewWorker)tab='dashboard';
   state.tab=tab;
+  if(state.user&&state.condo)sessionStorage.setItem(`hc_active_tab_${state.user.id}_${state.condo.id}`,tab);
   const titles={dashboard:'Visão geral',new:'Nova leitura',history:'Histórico',import:'Histórico antigo',settings:'Configurações'};
   $('page-title').textContent=titles[tab];
   for(const btn of document.querySelectorAll('[data-tab]'))btn.classList.toggle('active',btn.dataset.tab===tab);
@@ -192,9 +197,28 @@ async function signedPhoto(path){
   if(error)throw error;
   return data.signedUrl;
 }
+function renderLimitSettings(){
+  const el=$('limit-meter');if(!el)return;
+  const selected=state.meters.find(m=>m.id===el.value);
+  $('limit-value').value=selected?.weekly_limit_m3??'';
+  $('limit-saved-note').textContent=selected?.weekly_limit_m3?
+    `Referência atual: ${Number(selected.weekly_limit_m3).toLocaleString('pt-BR',{maximumFractionDigits:3})} m³ a cada 7 dias.`:
+    'Sem referência cadastrada para este hidrômetro.';
+}
+function renderLimitAlert(interval){
+  const meter=state.meters.find(m=>m.id===currentMeterId());
+  const comparison=evaluateWeeklyLimit(interval,meter?.weekly_limit_m3);
+  const el=$('limit-alert');
+  el.className='panel limit-report '+(comparison.status==='above'?'limit-above':comparison.status==='within'?'limit-within':'');
+  el.replaceChildren();
+  const h=document.createElement('h2');h.textContent=comparison.status==='above'?'⚠️ Acima da referência semanal':comparison.status==='within'?'✅ Dentro da referência semanal':'💧 Referência de consumo';
+  const body=document.createElement('p');body.textContent=weeklyLimitMessage(comparison);
+  el.append(h,body);
+}
 function renderDashboard(){
   const intervals=getIntervals();const ana=analyzeLatest(intervals);const latest=intervals.at(-1);
   const a=ana.last;
+  renderLimitAlert(latest);
   $('summary-grid').innerHTML=[
     statTile('Última leitura',latest?`${formatM3(toMillis(latest.value_m3))} <small>m³</small>`:'—',latest?fmtDate(latest.measured_on):'Sem leituras'),
     statTile('Consumo no período',a?`${formatM3(a.consumed)} <small>m³</small>`:'—',a?`${a.days} dia(s)`:'Cadastre duas leituras'),
@@ -408,6 +432,7 @@ async function renderReportImage(row){
   const meter=state.meters.find(m=>m.id===row.meter_id)?.name||'Hidrômetro';
   const intervals=getIntervals(row.meter_id);const interval=intervals.find(i=>i.id===row.id)||row;
   const insight=getWaterInsights(meterReadings(row.meter_id),row.measured_on);
+  const limitText=weeklyLimitMessage(evaluateWeeklyLimit(interval,state.meters.find(m=>m.id===row.meter_id)?.weekly_limit_m3));
   canvasLines(ctx,state.condo.name,82,260,925,42,'bold 37px system-ui','#193b45',2);
   paintText(ctx,`${meter}  •  ${fmtDate(row.measured_on)}`,82,337,'27px system-ui','#607783');
   drawRounded(ctx,76,363,928,198,18,'#e8f7f6');
@@ -420,7 +445,7 @@ async function renderReportImage(row){
   drawRounded(ctx,76,802,928,310,17,'#f0f7fa');
   paintText(ctx,'O QUE OS DADOS INDICAM',104,850,'bold 24px system-ui','#087f8c');
   let y=894;
-  for(const line of [insight.lastText,insight.trend,insight.monthlyText]){
+  for(const line of [insight.lastText,limitText,insight.trend]){
     const count=canvasLines(ctx,line,104,y,845,30,'22px system-ui','#264550',2);
     y+=Math.max(1,count)*30+9;
     if(y>1110)break;
@@ -447,7 +472,7 @@ function reportMessage(row){
     `*Consumo no período:* ${formatM3(i.consumed)} m³ em ${i.days} dia(s)`,
     `*Média diária:* ${formatM3(Math.round(i.daily))} m³/dia`);
   else body.push('*Primeiro registro:* usado como referência para a próxima medição.');
-  body.push('','*Resumo dos dados:*',insight.trend,insight.monthlyText,'',
+  body.push('','*Referência de consumo:*',weeklyLimitMessage(evaluateWeeklyLimit(i,state.meters.find(m=>m.id===row.meter_id)?.weekly_limit_m3)),'','*Resumo dos dados:*',insight.trend,insight.monthlyText,'',
     'Consumos elevados não comprovam vazamentos.','',`*Registrado por:* ${row.registered_by_name}`);
   return body.join('\n');
 }
@@ -711,6 +736,8 @@ async function exportPDF(){
       doc.setTextColor(25,51,57);
       write(`${rows.length} registro(s) | ${fmtDate(rows[0].measured_on)} a ${fmtDate(rows.at(-1).measured_on)}`);
       const insight=getWaterInsights(rows,rows.at(-1).measured_on);
+      const limitText=weeklyLimitMessage(evaluateWeeklyLimit(buildIntervals(rows).at(-1),meter.weekly_limit_m3));
+      write(`Referência semanal: ${limitText}`,{size:9});
       for(const paragraph of [insight.lastText,insight.recentText,insight.trend,insight.monthlyText,insight.warning]){
         write(paragraph,{size:9,gap:2});
       }
@@ -762,13 +789,20 @@ async function init(){
   const cfg=window.HIDRO_CONFIG;
   if(!cfg?.supabaseUrl?.startsWith('https://')||!cfg?.supabaseKey||cfg.supabaseUrl.includes('SEU-PROJETO')||cfg.supabaseKey.includes('SUA_CHAVE')||!window.supabase){screens('setup');return;}
   state.db=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true}});
-  demoController=makeDemoController({db:state.db,screens,toast,homeUrl,goHome:async()=>{state.pickerOpen=true;await bootstrap();},startSignup:()=>changeAuthMode('signup')});
+  guidedTour=createGuidedTour({onTab:(tab)=>{if(tab){if(document.querySelector('#screen-demo:not([hidden])'))demoController?.selectTab(tab);else if(document.querySelector('#screen-app:not([hidden])'))setTab(tab);}}});
+  demoController=makeDemoController({db:state.db,screens,toast,homeUrl,goHome:async()=>{state.pickerOpen=true;await bootstrap();},startSignup:()=>changeAuthMode('signup'),showTour:(mode)=>startGuidedTour(mode)});
   demoController.init();
-  state.db.auth.onAuthStateChange((_event,_session)=>{
-    if(new URLSearchParams(location.search).has('demo'))return; // Demo login is intentionally handled only inside its isolated UI.
+  // Never reset the current screen on INITIAL_SESSION or TOKEN_REFRESHED.
+  // Supabase refreshes sessions after a background/foreground transition on mobile.
+  state.db.auth.onAuthStateChange((event,session)=>{
+    if(new URLSearchParams(location.search).has('demo'))return;
+    if(event==='TOKEN_REFRESHED'||event==='INITIAL_SESSION'||event==='USER_UPDATED')return;
+    if(event==='SIGNED_IN'&&state.user?.id===session?.user?.id)return;
+    if(event==='SIGNED_OUT'&&!state.user)return;
     setTimeout(()=>bootstrap().catch(err=>{toast(apiError(err),true);screens('auth');}),0);
   });
-  if(new URLSearchParams(location.search).has('demo'))demoController.welcome();else await bootstrap();
+  if(new URLSearchParams(location.search).has('demo'))demoController.welcome();
+  else {await bootstrap();if(state.profile==='suporte'&&sessionStorage.getItem('hc_support_view')==='demo-admin')await demoController.showAdmin();}
 }
 function bindEvents(){
   $('auth-mode-login').addEventListener('click',()=>changeAuthMode('login'));
@@ -889,6 +923,14 @@ function bindEvents(){
   }));
   $('historical-meter').addEventListener('change',()=>{clearHistoricalPreview();resetHistoricalPhotos();});
   $('historical-paste').addEventListener('input',clearHistoricalPreview);
+  $('limit-meter').addEventListener('change',renderLimitSettings);
+  $('meter-limit-form').addEventListener('submit',guard(async e=>{
+    e.preventDefault();if(!isManager()||state.previewWorker)throw Error('Somente síndico(a) pode alterar referências.');
+    const meterId=$('limit-meter').value;const value=parseWeeklyLimit($('limit-value').value);
+    if(!state.meters.some(m=>m.id===meterId))throw Error('Hidrômetro não encontrado.');
+    const {error}=await state.db.from('meters').update({weekly_limit_m3:value}).eq('id',meterId).eq('condominium_id',state.condo.id);
+    if(error)throw error;reportCache.clear();await loadData();toast(value===null?'Referência removida.':'Referência semanal atualizada.');
+  }));
   $('meter-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();if(!isManager())throw Error('Sem permissão.');
     const {error}=await state.db.from('meters').insert({condominium_id:state.condo.id,name:$('meter-name').value.trim()});
@@ -934,46 +976,24 @@ function applyTheme(theme){
   localStorage.setItem('hidrocondo_theme',theme);
 }
 function cycleTheme(){applyTheme(state.theme==='auto'?'dark':state.theme==='dark'?'light':'auto');}
+function startGuidedTour(mode){
+  if(guidedTour?.start(mode))return;
+  $('tutorial-body').textContent='Aguarde carregar a tela e toque novamente em Ajuda para iniciar o tour.';
+  if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
+}
 function showTutorial(){
-  if(new URLSearchParams(location.search).has('demo')){
-    $('tutorial-body').innerHTML='<ol><li>Este é um teste. Todos os dados iniciais são fictícios.</li><li>Você pode registrar novas leituras de teste e conferir o histórico e os gráficos.</li><li>Fotos só aparecem como prévia no dispositivo. Não são salvas no servidor.</li><li>O zelador pode enviar histórico fictício para aprovação pelo(a) síndico(a).</li><li>O prazo é limitado. Se sair ou limpar o navegador, poderá perder acesso e dados de teste.</li><li>Para usar de verdade, crie sua conta e configure um condomínio real.</li></ol>';
-    if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();return;
-  }
-  const worker=viewWorker()||(state.profile==='zelador'&&!state.role);
-  const support=state.profile==='suporte';
-  const lines=worker?[
-    'Abra o link pessoal recebido do(a) síndico(a) e entre com sua conta.',
-    'Em Nova leitura, toque em Tirar foto ou Escolher da galeria. Confira a foto do visor antes de salvar.',
-    'Confira a parte inteira e os 3 decimais. A linha m³/h NÃO é o consumo acumulado.',
-    'Toque em Salvar medição. Depois, se quiser, compartilhe o relatório com foto.',
-    'O registro aparece automaticamente no painel do(a) síndico(a).',
-    'Em Histórico antigo, informe data e leitura; toque em Conferir histórico e, se desejar, escolha uma foto para cada data. Fotos são opcionais. Depois, envie para aprovação do(a) síndico(a).',
-    'Em Histórico antigo, acompanhe se seu envio está aguardando, aprovado ou rejeitado. Pedidos pendentes não mudam os gráficos.',
-    'Use Condomínios para trocar de local sem sair da conta. Cada condomínio mantém seus próprios registros.'
-  ]:support?[
-    'Peça ao(à) síndico(a) um link temporário de suporte.',
-    'Abra o link usando sua conta técnica autorizada e ative a sessão.',
-    'Consulte o painel e corrija medições com motivo documentado.',
-    'O acesso termina em até 90 minutos ou antes, caso seja revogado.',
-    'Se sua conta estiver autorizada para criar condomínios, use Demonstrações para gerar links de teste fictícios sem exigir cadastro.',
-    'Use Condomínios para trocar entre sessões autorizadas. Ver como zelador(a) mostra uma prévia sem salvar dados.'
-  ]:[
-    'Crie seu condomínio ao entrar pela primeira vez.',
-    'Em Ajustes, gere um link individual de ativação para cada zelador(a).',
-    'Registre a primeira leitura histórica como referência, se necessário.',
-    'Acompanhe o painel, gráficos, fotos e histórico das medições.',
-    'Gere um link de suporte temporário apenas quando precisar de assistência; revogue-o depois.',
-    'Use Condomínios para administrar vários com o mesmo e-mail e Ver como zelador(a) para simular o fluxo sem alterar dados.',
-    'Em Histórico antigo, informe data e leitura ou cole várias linhas; confira a prévia e escolha fotos opcionais por data, da câmera ou da galeria.',
-    'Os históricos enviados por zeladores ficam na fila Históricos aguardando aprovação. Confira as datas e valores antes de aprovar ou justifique a rejeição.',
-    'No Histórico, exporte PDF completo com as fotos disponíveis e um resumo por hidrômetro.'
-  ];
-  $('tutorial-body').innerHTML=`<ol>${lines.map(line=>`<li>${escapeHtml(line)}</li>`).join('')}</ol><p class="help">O relatório com foto está sujeito às opções de compartilhamento do navegador. Se necessário, baixe o PNG e anexe no WhatsApp.</p>`;
+  const demo=new URLSearchParams(location.search).has('demo');
+  if(document.querySelector('#screen-demo-admin:not([hidden])'))return startGuidedTour('demo-admin');
+  if(demo&&document.querySelector('#screen-demo:not([hidden])'))return startGuidedTour(demoController?.currentRole()==='sindico'?'demo-manager':'demo-worker');
+  if(document.querySelector('#screen-app:not([hidden])'))return startGuidedTour(viewWorker()?'worker':state.profile==='suporte'?'support':'manager');
+  if(document.querySelector('#screen-onboard:not([hidden])')&&state.profile==='suporte')return startGuidedTour('support-onboard');
+  $('tutorial-body').innerHTML='<p>Entre em um condomínio ou na demonstração. Depois, toque em Ajuda para um tour guiado que destaca cada função da tela.</p>';
   if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
 }
 function showTutorialOnce(){
-  const key=`hc_tutorial_v060_${state.role}`;
-  if(!localStorage.getItem(key)){localStorage.setItem(key,'1');showTutorial();}
+  const mode=viewWorker()?'worker':state.profile==='suporte'?'support':'manager';
+  const key=`hc_tour_v070_${mode}`;
+  if(!localStorage.getItem(key)){localStorage.setItem(key,'1');setTimeout(()=>startGuidedTour(mode),150);}
 }
 applyTheme(localStorage.getItem('hidrocondo_theme')||'auto');
 if(new URLSearchParams(location.search).has('suporte'))$('auth-mode-signup').hidden=true;

@@ -1,27 +1,20 @@
-# HidroCondo v0.6.0-beta — Invitation-Only Demo Workspaces
+# HidroCondo v0.7.0-beta — Demo Links, Weekly Limits & Guided Tours
 
-## Features
+## What's new
 
-- Add no-signup, role-specific demo links powered by Supabase anonymous sign-in.
-- Create 24-hour, 72-hour, or 7-day fictional workspaces with predefined sample readings.
-- Issue separate manager and worker demo invitations (one, three or five visitors per role).
-- Show a mandatory full-size pre-entry warning and a prominent persistent demo banner.
-- Let workers register fictional readings and submit historical data for a demo manager's approval.
-- Synchronize fictional readings between demo participants without mixing them with production data.
-- Display fictitious consumption charts and summaries, and allow demo CSV/print reports.
-- Keep camera/gallery photos as **local-only previews**, never uploading them in demo mode.
-- Enforce demo roles, expiration, revocation, limited uses, and monotonic meter values in Postgres RPCs.
-- Add administrator-side demo list and early-revoke action.
-- Update Portuguese tutorials, technical documentation and test coverage.
+- **Recover demo links:** authorized platform support can reopen manager/worker links on active demonstration workspaces. Pre-v0.7 links cannot be recovered (they were hash-only); a confirmation flow offers secure regeneration with old links invalidated.
+- **Configurable meter consumption reference:** condominium managers can set a non-mandatory weekly threshold (m³ per 7 days) per real meter. The dashboard, WhatsApp report and PDF distinguish interval consumption from normalized weekly comparisons. Not a leak diagnosis or a legal limit.
+- **Demo comparison:** a fictional weekly reference starts at 80 m³ and can be edited by the demo manager, without impacting real data.
+- **Guided product tours:** spotlight walkthroughs tailored to managers, workers, support administrators and the two demo roles, optimized for mobile.
+- **Improved navigation persistence:** normal Supabase token refreshes no longer reset the app screen; active tabs and the support demonstration manager are restored after a same-tab page reload where possible.
+- **Tutorial and engineering documentation updated.**
 
-## Security and scope
+## Required deployment
 
-- New segregated `hc_demo_*` tables with RLS and no direct client grants.
-- Harden real-condominium membership helpers and worker invitation redemption against anonymous identities.
-- Demo records are temporarily persisted for interaction, but are **disposable**. They do not convert into permanent condominium records.
-- Anonymous sign-in must be enabled **only after applying migration `sql/upgrade_0_6_0.sql`**.
-- Bot/CAPTCHA hardening and production acceptance testing are required before mass public use.
+Run `sql/upgrade_0_7_0.sql` once in Supabase SQL Editor **after** the v0.6.0 schema, then publish the updated static files. Keep your existing `config.js`; no production data is intentionally deleted. See README for exact files and acceptance steps.
 
-## Upgrade notes
+## Validation
 
-Back up first. Apply `sql/upgrade_0_6_0.sql` after the v0.5.0 migration, then enable Anonymous Sign-Ins. Replace the web app files and add `demo.js`. Preserve `config.js`. This release is in beta; no live database or client-device integration tests have been performed here.
+Automated JavaScript tests cover weekly normalization, edge cases, existing readings, imports and tour configuration. Manual mobile visual checks, database/RLS tests, and full invite-recovery tests against Supabase remain required before production use.
+
+**Status:** Beta / Pre-release.

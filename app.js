@@ -1,12 +1,14 @@
 import {parseWholeMeter, parseDecimalMeter, readValue, toMillis, toM3String, formatM3, buildIntervals, analyzeLatest, localDate, fmtDate, diffDays} from './math.js';
 import {getWaterInsights} from './analysis.js';
 import {parseHistoricalText,previewHistorical} from './historical.js';
+import {mayCreateCondo,maySubmitHistory,mayApproveHistory} from './permissions.js';
 
 const $ = id => document.getElementById(id);
 const STORE = 'hidrocondo-fotos';
-const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null};
+const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null,historyRequests:[],platformCreator:false};
 const canCorrect = ()=>(state.role==='sindica'||state.role==='suporte')&&!state.previewWorker;
 const isManager = ()=>state.role==='sindica';
+const canCreateCondo = ()=>mayCreateCondo(state.profile,state.platformCreator);
 const homeUrl=()=>location.origin+location.pathname;
 const number = n => Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:1});
 const escapeHtml = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -42,9 +44,10 @@ async function bootstrap(){
   state.user=user;
   if(!user){state.member=null;state.profile=null;return screens('auth');}
   const {data:profile,error:pe}=await state.db.from('account_profiles')
-    .select('account_type').eq('user_id',user.id).maybeSingle();
+    .select('account_type,can_create_condominiums').eq('user_id',user.id).maybeSingle();
   if(pe)throw Error('Atualize o banco: execute sql/upgrade_0_2_0.sql no Supabase. '+pe.message);
   state.profile=profile?.account_type||null;
+  state.platformCreator=Boolean(profile?.can_create_condominiums);
   if(!state.profile){state.role=null;return screens('profile');}
   const {data:members,error:e}=await state.db.from('memberships')
     .select('condominium_id,role,condominiums(id,name)')
@@ -83,14 +86,15 @@ async function bootstrap(){
       const caption=document.createElement('small');caption.textContent=item.role==='sindica'?'Síndico(a)':item.role==='zelador'?'Zelador(a)':'Suporte temporário';
       btn.append(title,caption);return btn;
     }));
-    $('create-condo-form').hidden=state.profile!=='sindico';
+    $('create-condo-form').hidden=!canCreateCondo();
     $('join-condo-form').hidden=state.profile!=='zelador';
     $('support-join-form').hidden=state.profile!=='suporte';
     $('onboard-title').textContent=spaces.length?'Escolha um condomínio':'Ativar seu primeiro condomínio';
     $('onboard-subtitle').textContent=spaces.length?
       'Seu e-mail pode acessar vários condomínios. Selecione um ou adicione outro.':
       state.profile==='sindico'?'Crie seu condomínio. Você poderá adicionar outros depois.':
-      state.profile==='zelador'?'Cole o convite do(a) síndico(a).':'Ative um convite de suporte temporário.';
+      state.profile==='zelador'?'Cole o convite do(a) síndico(a).':
+      canCreateCondo()?'Crie um novo condomínio ou ative um convite de suporte.':'Ative um convite de suporte temporário.';
     if(params.get('convite'))$('join-code').value=homeUrl()+'?convite='+params.get('convite');
     if(params.get('suporte'))$('support-join-code').value=homeUrl()+'?suporte='+params.get('suporte');
     state.pickerOpen=false;
@@ -117,15 +121,16 @@ async function bootstrap(){
 async function loadData(){
   if(!state.condo)return;
   const cid=state.condo.id;
-  const [m,r,a]=await Promise.all([
+  const [m,r,a,h]=await Promise.all([
     state.db.from('meters').select('*').eq('condominium_id',cid).order('created_at'),
     state.db.from('readings').select('*').eq('condominium_id',cid).order('measured_on',{ascending:false}).limit(1500),
-    state.db.from('readings_audit').select('*').eq('condominium_id',cid).order('changed_at',{ascending:false}).limit(1500)
+    state.db.from('readings_audit').select('*').eq('condominium_id',cid).order('changed_at',{ascending:false}).limit(1500),
+    state.db.from('historical_submissions').select('id,condominium_id,meter_id,submitted_by_name,entries,status,review_note,created_at,reviewed_at').eq('condominium_id',cid).order('created_at',{ascending:false}).limit(100)
   ]);
-  for(const x of [m,r,a])if(x.error)throw x.error;
-  state.meters=m.data||[];state.readings=r.data||[];state.audits=a.data||[];
+  for(const x of [m,r,a,h])if(x.error)throw x.error;
+  state.meters=m.data||[];state.readings=r.data||[];state.audits=a.data||[];state.historyRequests=h.data||[];
   if(!state.meters.some(meter=>meter.id===state.meterId))state.meterId=state.meters[0]?.id||null;
-  renderMeters();renderDashboard();renderHistory();updatePrevious();updateLive();
+  renderMeters();renderDashboard();renderHistory();renderHistoryRequests();updatePrevious();updateLive();
   $('meter-input-wrap').hidden=state.meters.length<=1;
   $('sync-label').textContent=`Atualizado ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · automaticamente a cada 30 s`;
 }
@@ -144,6 +149,7 @@ function applyRoleView(){
   $('role-label').textContent=state.previewWorker?'PRÉVIA DO ZELADOR(A)':state.role==='sindica'?'PAINEL DO(A) SÍNDICO(A)':
     state.role==='suporte'?'SUPORTE TEMPORÁRIO':'ÁREA DO ZELADOR(A)';
   $('admin-settings').hidden=worker||!isManager();
+  $('historical-submit').textContent=state.role==='zelador'?'Enviar para aprovação':'Salvar histórico confirmado';
   $('worker-quick').hidden=!worker;
   for(const node of document.querySelectorAll('[data-manager-only]'))node.hidden=worker||!isManager();
   for(const node of document.querySelectorAll('[data-hide-worker]'))node.hidden=worker;
@@ -170,6 +176,7 @@ function setTab(tab){
   for(const id of Object.keys(titles))$('tab-'+id).hidden=id!==tab;
   if(tab==='dashboard')renderDashboard();
   if(tab==='history')renderHistory();
+  if(tab==='import')renderHistoryRequests();
   if(tab==='new'){updatePrevious();updateLive();}
 }
 function statTile(label,value,foot=''){return `<div class="summary-tile"><div class="metric-title">${escapeHtml(label)}</div><div class="metric">${value}</div><div class="hint">${escapeHtml(foot)}</div></div>`;}
@@ -478,7 +485,9 @@ function showHistoricalPreview(){
     'Uma leitura de referência, sem consumo para o período.':
     `Entre a primeira e a última leitura importada: ${formatM3(summary.total)} m³ em ${summary.days} dia(s).`;
   box.append(info);
-  const note=document.createElement('strong');note.textContent='Atenção: esses dados serão marcados como históricos SEM foto. Confira os valores antes de salvar.';box.append(note);
+  const note=document.createElement('strong');note.textContent=state.role==='zelador'
+    ?'Sem foto: o histórico será ENVIADO PARA APROVAÇÃO. Ele só aparecerá nos cálculos após o(a) síndico(a) aprovar.'
+    :'Atenção: esses dados serão marcados como históricos SEM foto. Confira os valores antes de salvar.';box.append(note);
   state.pendingHistory={meterId,rows,text:$('historical-paste').value};
   $('historical-submit').disabled=false;
 }
@@ -488,17 +497,81 @@ async function saveHistorical(e){
   if(!pending||pending.meterId!==$('historical-meter').value||pending.text!==$('historical-paste').value)
     throw Error('Revise o histórico antes de confirmar.');
   previewHistorical(pending.rows,meterReadings(pending.meterId),localDate());
-  const btn=$('historical-submit');setBusy(btn,true,'Gravando histórico...');
+  const btn=$('historical-submit');setBusy(btn,true,state.role==='zelador'?'Enviando pedido...':'Gravando histórico...');
   try{
     const payload=pending.rows.map(r=>({condominium_id:state.condo.id,meter_id:pending.meterId,
       measured_on:r.measured_on,value_m3:toM3String(r.milli),photo_path:null,entry_kind:'historical',
       created_by:state.user.id,registered_by_name:userDisplayName()}));
-    // One SQL insert statement: if any row fails the transaction is rolled back.
-    const {error}=await state.db.from('readings').insert(payload);if(error)throw error;
-    clearHistoricalPreview();$('historical-paste').value='';await loadData();
-    toast(`${payload.length} leituras históricas salvas com sucesso.`);
-    setTab('history');
+    if(maySubmitHistory(state.role)){
+      const entries=payload.map(row=>({measured_on:row.measured_on,value_m3:row.value_m3}));
+      const {error}=await state.db.rpc('hc_submit_historical',{
+        p_condo:state.condo.id,p_meter:pending.meterId,p_entries:entries,p_name:userDisplayName()
+      });
+      if(error)throw error;
+      clearHistoricalPreview();$('historical-paste').value='';await loadData();
+      toast(`${payload.length} leituras enviadas! Aguardando aprovação do(a) síndico(a).`);
+      setTab('import');
+    }else{
+      // One SQL insert statement: if any row fails the transaction is rolled back.
+      const {error}=await state.db.from('readings').insert(payload);if(error)throw error;
+      clearHistoricalPreview();$('historical-paste').value='';await loadData();
+      toast(`${payload.length} leituras históricas salvas com sucesso.`);
+      setTab('history');
+    }
   }finally{setBusy(btn,false);}
+}
+
+function renderHistoryRequests(){
+  const panel=$('history-requests-panel'), list=$('history-requests-list');
+  if(!panel||!list)return;
+  panel.hidden=state.previewWorker||state.role==='suporte';
+  if(panel.hidden)return;
+  const isWorker=state.role==='zelador';
+  $('history-requests-title').textContent=isWorker?'Meus históricos enviados':'Históricos aguardando aprovação';
+  const requests=state.historyRequests.filter(r=>isWorker||r.status==='pending');
+  const waiting=state.historyRequests.filter(r=>r.status==='pending').length;
+  const importTab=document.querySelector('button[data-tab="import"]');
+  if(importTab)importTab.textContent=!isWorker&&waiting?`🕓 Histórico antigo (${waiting})`:'🕓 Histórico antigo';
+  const badge=$('history-requests-count');
+  badge.textContent=isWorker?'':waiting?`(${waiting})`:'';
+  if(!requests.length){list.innerHTML=`<p class="empty">${isWorker?'Nenhum histórico enviado ainda.':'Nenhum histórico aguardando aprovação.'}</p>`;return;}
+  list.innerHTML=requests.map(r=>{
+    const meter=state.meters.find(m=>m.id===r.meter_id)?.name||'Hidrômetro';
+    const rows=Array.isArray(r.entries)?r.entries:[];
+    const status=r.status==='pending'?'Aguardando aprovação':r.status==='approved'?'Aprovado':'Rejeitado';
+    const buttons=!isWorker&&r.status==='pending'?`<div class="button-row">
+      <button type="button" data-history-action="approve" data-history-id="${escapeHtml(r.id)}" class="btn btn-primary">✓ Aprovar</button>
+      <button type="button" data-history-action="reject" data-history-id="${escapeHtml(r.id)}" class="btn btn-secondary">✕ Rejeitar</button>
+    </div>`:'';
+    return `<article class="pending-card">
+      <div class="pending-card-heading"><strong>${escapeHtml(meter)}</strong><span class="pill">${escapeHtml(status)}</span></div>
+      <p class="history-meta">${escapeHtml(r.submitted_by_name)} · ${new Date(r.created_at).toLocaleString('pt-BR')} · ${rows.length} leitura(s)</p>
+      ${r.review_note?`<p class="history-meta">Motivo: ${escapeHtml(r.review_note)}</p>`:''}
+      <details><summary>Conferir todas as leituras (${rows.length})</summary><div class="submitted-rows">${rows.map(row=>`<div><span>${escapeHtml(fmtDate(row.measured_on))}</span><strong>${escapeHtml(formatM3(toMillis(row.value_m3)))} m³</strong></div>`).join('')}</div></details>
+      ${buttons}
+    </article>`;
+  }).join('');
+}
+async function reviewHistory(id,approve){
+  if(!mayApproveHistory(state.role)||state.previewWorker)throw Error('Apenas o(a) síndico(a) pode analisar o histórico.');
+  const item=state.historyRequests.find(r=>r.id===id&&r.status==='pending');
+  if(!item)throw Error('Este pedido já foi analisado ou não está mais disponível.');
+  let reason=null;
+  if(approve){
+    const readings=item.entries.map(row=>({measured_on:row.measured_on,milli:toMillis(row.value_m3)}));
+    previewHistorical(readings,meterReadings(item.meter_id),localDate());
+    if(!confirm(`Aprovar ${readings.length} leitura(s) de ${item.submitted_by_name}? Elas entrarão nos gráficos e relatórios.`))return;
+  }else{
+    reason=prompt('Informe o motivo da rejeição (mínimo 5 caracteres):');
+    if(reason===null)return;
+    if(reason.trim().length<5)throw Error('Descreva o motivo da rejeição (mínimo 5 caracteres).');
+  }
+  const {error}=await state.db.rpc('hc_review_historical',{
+    p_submission:id,p_approve:approve,p_reason:reason
+  });
+  if(error)throw error;
+  toast(approve?'Histórico aprovado e incluído nas medições oficiais.':'Histórico rejeitado. O zelador verá o motivo.');
+  await loadData();
 }
 
 async function loadPdfLibrary(){
@@ -654,7 +727,7 @@ function bindEvents(){
   const signOut=guard(async()=>{const {error}=await state.db.auth.signOut();if(error)throw error;state.member=null;state.condo=null;state.meters=[];state.readings=[];screens('auth');});
   $('logout').addEventListener('click',signOut);
   $('onboard-logout').addEventListener('click',signOut);
-  function showWorkspacePicker(){state.previewWorker=false;state.pickerOpen=true;state.condo=null;state.readings=[];state.meters=[];state.lastSaved=null;state.pendingHistory=null;reportCache.clear();bootstrap().catch(err=>toast(apiError(err),true));}
+  function showWorkspacePicker(){state.previewWorker=false;state.pickerOpen=true;state.condo=null;state.meters=[];state.readings=[];state.historyRequests=[];state.lastSaved=null;state.pendingHistory=null;reportCache.clear();bootstrap().catch(err=>toast(apiError(err),true));}
   $('switch-condo').addEventListener('click',showWorkspacePicker);
   $('settings-switch-condo').addEventListener('click',showWorkspacePicker);
   $('workspace-list').addEventListener('click',guard(async e=>{
@@ -667,7 +740,7 @@ function bindEvents(){
   $('exit-worker-preview').addEventListener('click',toggleWorkerPreview);
   $('create-condo-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const btn=e.currentTarget.querySelector('button');setBusy(btn,true);
-    try{if(state.profile!=='sindico')throw Error('Perfil sem permissão de criar condomínio.');
+    try{if(!canCreateCondo())throw Error('Perfil sem permissão para criar condomínio. Peça a autorização no Supabase.');
       const {data,error}=await state.db.from('condominiums').insert({name:$('new-condo-name').value.trim(),owner_id:state.user.id}).select('id').single();if(error)throw error;localStorage.setItem(activeKey(),data.id);state.pickerOpen=false;await bootstrap();toast('Condomínio criado! Gere um link de convite em Ajustes.');}finally{setBusy(btn,false);}
   }));
   $('join-condo-form').addEventListener('submit',guard(async e=>{
@@ -709,6 +782,10 @@ function bindEvents(){
   $('export-csv').addEventListener('click',guard(async()=>exportCSV()));
   $('export-pdf').addEventListener('click',guard(exportPDF));
   $('historical-form').addEventListener('submit',guard(saveHistorical));
+  $('history-requests-list').addEventListener('click',guard(async e=>{
+    const button=e.target.closest('button[data-history-action]');if(!button)return;
+    await reviewHistory(button.dataset.historyId,button.dataset.historyAction==='approve');
+  }));
   $('historical-preview-button').addEventListener('click',guard(showHistoricalPreview));
   $('historical-append').addEventListener('click',guard(()=>{
     if(state.previewWorker)throw Error('Saia da visualização para importar leituras.');
@@ -777,7 +854,8 @@ function showTutorial(){
     'Confira a parte inteira e os 3 decimais. A linha m³/h NÃO é o consumo acumulado.',
     'Toque em Salvar medição. Depois, se quiser, compartilhe o relatório com foto.',
     'O registro aparece automaticamente no painel do(a) síndico(a).',
-    'Para adicionar leituras antigas sem foto, abra Histórico antigo: informe data e valor, toque em Adicionar e confirme a lista antes de salvar.',
+    'Para adicionar leituras antigas sem foto, abra Histórico antigo: informe data e valor, toque em Adicionar e ENVIE PARA APROVAÇÃO do(a) síndico(a).',
+    'Em Histórico antigo, acompanhe se seu envio está aguardando, aprovado ou rejeitado. Pedidos pendentes não mudam os gráficos.',
     'Use Condomínios para trocar de local sem sair da conta. Cada condomínio mantém seus próprios registros.'
   ]:support?[
     'Peça ao(à) síndico(a) um link temporário de suporte.',
@@ -793,13 +871,14 @@ function showTutorial(){
     'Gere um link de suporte temporário apenas quando precisar de assistência; revogue-o depois.',
     'Use Condomínios para administrar vários com o mesmo e-mail e Ver como zelador(a) para simular o fluxo sem alterar dados.',
     'Em Histórico antigo, informe data e leitura ou cole várias linhas antigas sem fotos. Confira a prévia e confirme.',
+    'Os históricos enviados por zeladores ficam na fila Históricos aguardando aprovação. Confira as datas e valores antes de aprovar ou justifique a rejeição.',
     'No Histórico, exporte PDF completo com as fotos disponíveis e um resumo por hidrômetro.'
   ];
   $('tutorial-body').innerHTML=`<ol>${lines.map(line=>`<li>${escapeHtml(line)}</li>`).join('')}</ol><p class="help">O relatório com foto está sujeito às opções de compartilhamento do navegador. Se necessário, baixe o PNG e anexe no WhatsApp.</p>`;
   if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
 }
 function showTutorialOnce(){
-  const key=`hc_tutorial_v030_${state.role}`;
+  const key=`hc_tutorial_v040_${state.role}`;
   if(!localStorage.getItem(key)){localStorage.setItem(key,'1');showTutorial();}
 }
 applyTheme(localStorage.getItem('hidrocondo_theme')||'auto');

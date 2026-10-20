@@ -183,6 +183,11 @@
       </section>
 
       <section id="tab-import" class="tab-content" hidden>
+        <div id="history-requests-panel" class="panel narrow-form" hidden>
+          <h2><span id="history-requests-title">Históricos aguardando aprovação</span> <span id="history-requests-count"></span></h2>
+          <p class="help">Leituras enviadas por zeladores só entram nos gráficos após aprovação. Confira todas as datas e valores.</p>
+          <div id="history-requests-list" aria-live="polite"></div>
+        </div>
         <div class="panel narrow-form">
           <h2>Adicionar histórico sem fotos</h2>
           <p>Para registros antigos. Cada linha deve ter <strong>data;leitura</strong>. Use o mesmo hidrômetro para a sequência. Não apaga nem modifica medições existentes.</p>
@@ -222,7 +227,7 @@
         <div class="panel"><h2>Sobre o aplicativo</h2><p>Fotos protegidas, leituras em m³ com três casas decimais e cálculos automáticos. Os dados são sincronizados online; o envio de medição exige internet.</p><p>Para evitar perda de dados, exporte o CSV periodicamente. Não compartilhe senhas nem a chave secreta do Supabase.</p></div>
       </section>
     </section>
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.3.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.4.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

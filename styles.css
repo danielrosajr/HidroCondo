@@ -36,3 +36,14 @@
 
 .historical-quick-row{display:grid;grid-template-columns:1fr 1fr;gap:13px}
 @media(max-width:450px){.historical-quick-row{grid-template-columns:1fr}}
+
+/* v0.4.0: mobile-first historical approval queue. */
+.pending-card{padding:16px 0;border-top:1px solid var(--line)}
+.pending-card:first-of-type{border-top:0}
+.pending-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pending-card details{margin:12px 0}
+.pending-card summary{cursor:pointer;color:var(--primary-dark);font-weight:650;min-height:42px;display:flex;align-items:center}
+.submitted-rows{max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+.submitted-rows div{padding:9px 12px;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);font-size:.88rem}
+.submitted-rows div:last-child{border-bottom:0}
+@media(max-width:550px){.pending-card .button-row{display:grid;grid-template-columns:1fr 1fr}.pending-card .button-row .btn{width:100%;min-height:48px}.pending-card-heading{align-items:flex-start}}

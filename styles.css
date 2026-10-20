@@ -114,3 +114,14 @@
 @media(max-width:640px){.tour-guide{max-height:min(45dvh,340px);overflow-y:auto;padding:16px}.tour-guide h2{font-size:1.08rem}.tour-guide p{font-size:.84rem}.tour-actions .btn{font-size:.77rem;padding:10px}.demo-admin-entry .demo-actions{justify-content:flex-start}}
 @media(prefers-reduced-motion:reduce){.tour-focus{transition:none}}
 @media print{.tour-guide,.tour-focus,.tour-scrim{display:none!important}}
+
+/* 0.8.0 — responsive people and invite management */
+.people-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.people-invite-form{max-width:560px}
+.people-list{display:grid;gap:9px;margin:12px 0 26px}
+.people-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.people-identity{min-width:0;display:grid;gap:3px;overflow-wrap:anywhere}
+.people-identity strong{font-size:.91rem}
+.people-identity small{font-size:.78rem;color:var(--muted)}
+.people-row .btn{flex-shrink:0}
+@media(max-width:570px){.people-row{align-items:stretch;flex-direction:column}.people-row .btn{width:100%}.people-head .btn{width:100%}}

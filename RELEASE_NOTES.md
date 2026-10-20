@@ -1,20 +1,29 @@
-# HidroCondo v0.7.0-beta — Demo Links, Weekly Limits & Guided Tours
+# HidroCondo v0.8.0-beta — Condominium Invitations & Access Management
 
-## What's new
+## New
 
-- **Recover demo links:** authorized platform support can reopen manager/worker links on active demonstration workspaces. Pre-v0.7 links cannot be recovered (they were hash-only); a confirmation flow offers secure regeneration with old links invalidated.
-- **Configurable meter consumption reference:** condominium managers can set a non-mandatory weekly threshold (m³ per 7 days) per real meter. The dashboard, WhatsApp report and PDF distinguish interval consumption from normalized weekly comparisons. Not a leak diagnosis or a legal limit.
-- **Demo comparison:** a fictional weekly reference starts at 80 m³ and can be edited by the demo manager, without impacting real data.
-- **Guided product tours:** spotlight walkthroughs tailored to managers, workers, support administrators and the two demo roles, optimized for mobile.
-- **Improved navigation persistence:** normal Supabase token refreshes no longer reset the app screen; active tabs and the support demonstration manager are restored after a same-tab page reload where possible.
-- **Tutorial and engineering documentation updated.**
+- Invite additional **managers** and **workers** to an existing condominium with secure one-time links.
+- Condominium owners can invite/remove managers; delegated managers can invite/remove workers only.
+- Members can have **different roles in different condominiums** using one login.
+- New **People & permissions** settings panel lists members and pending invitations.
+- Revoke unused invitations and remove existing memberships without deleting readings or photo history.
+- Onboarding prioritizes invitation acceptance rather than asking the recipient to create a new condominium; the link can be resumed after email confirmation in the same browser.
+- Updated Portuguese in-app guided tour and mobile-friendly controls.
 
-## Required deployment
+## Security
 
-Run `sql/upgrade_0_7_0.sql` once in Supabase SQL Editor **after** the v0.6.0 schema, then publish the updated static files. Keep your existing `config.js`; no production data is intentionally deleted. See README for exact files and acceptance steps.
+- Five server-side, permission-checked PostgreSQL RPCs and RLS-protected invitation metadata.
+- High-entropy, single-use tokens stored as SHA-256 digests only.
+- 24-hour expiration for manager links and 7-day expiration for worker links.
+- Owner access cannot be removed; no invitation transfers ownership.
+- Demo anonymous sessions and support-only accounts cannot redeem real membership invitations.
 
-## Validation
+## Upgrade
 
-Automated JavaScript tests cover weekly normalization, edge cases, existing readings, imports and tour configuration. Manual mobile visual checks, database/RLS tests, and full invite-recovery tests against Supabase remain required before production use.
+Run `sql/upgrade_0_8_0.sql` after all previous migrations; then deploy the updated static site. **Do not replace configured `config.js` or rerun `setup.sql`**. No existing data is intentionally deleted.
 
-**Status:** Beta / Pre-release.
+## Known beta limitations
+
+Management links are bearer tokens; anyone who obtains an unused link may accept it with an eligible account. Treat links as sensitive, share them privately and revoke if exposed. Raw links cannot be recovered after leaving the invitation creation screen (only pending metadata remains).
+
+JavaScript unit tests passed locally; real Supabase RLS/RPC integration and smartphone tests remain required before production use.

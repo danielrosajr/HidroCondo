@@ -1,80 +1,82 @@
-# HidroCondo v0.7.0-beta
+# HidroCondo v0.8.0-beta
 
-Mobile-first Brazilian Portuguese condominium water-meter PWA, hosted as a static app with Supabase Auth/PostgreSQL RLS/private Storage. This version extends v0.6.0-beta without deleting any production reading, photograph, user, membership or demonstration workspace.
+A mobile-first water-meter reading PWA for condominium managers and workers. Static HTML/CSS/JavaScript frontend with Supabase Auth, PostgreSQL, RLS and private Storage. User-facing copy and in-app walkthrough are in Portuguese. Engineering documentation, commits and releases are in English.
 
-## Features in v0.7.0
+## What's new
 
-### Reopen demonstration invitations
+**People & permissions:** A condominium owner can invite another **manager (`sindica`)** or a **worker (`zelador`)** to an existing condominium. Other condominium managers can invite workers, but cannot grant or revoke management privileges. Invitation links are single-use and expire after **24 hours for managers** and **7 days for workers**.
 
-**Support administrators** with `account_type='suporte'` and `can_create_condominiums=true` can open **Demonstrações → Meus ambientes de demonstração → Ver links** to retrieve the manager and worker invitation URLs **after a reload, background/foreground transition, or return to the home screen**. A new owner-scoped Supabase RPC returns the tokens. Invitation tokens for newly generated demo spaces are stored server-side in the private `hc_demo_invites.recovery_token` column; all demo tables remain RLS-protected and inaccessible by direct browser SELECT.
+An invited person can sign in using an existing HidroCondo account or register a personal account. **They must not create a second condominium.** One personal account can now have different membership roles at different condominiums; access is determined by `memberships.role`, not just the global onboarding `account_profiles.account_type`.
 
-**Existing v0.6 demonstration links cannot be recovered:** the earlier implementation saved *only a hash*. On an older space, **Ver links** offers a **confirmed regeneration**. Rotating invalidates unredeemed old links, but does not terminate visitor memberships already activated; the space expiration date does not change. A support user can only recover/rotate invitations for demonstration spaces they themselves created.
+The settings page lists actual members and their condominium-level roles, and shows pending invitations. A condominium owner cannot be removed. The owner can revoke access from other managers and workers; delegated managers can only remove workers. All changes are enforced in **server-side PostgreSQL SECURITY DEFINER RPCs**, not just by hiding controls.
 
-Bearer links confer temporary access to *fictional* data. Treat links as confidential, never post them publicly, and never use real readings or identifying personal information in demo workspaces. The demonstration disclaimer and sticky test-only banner remain in place. Guests cannot access production data and demo photos are never uploaded.
+**Important security properties:**
 
-### Weekly consumption reference (not a legal/contractual threshold)
+- Invitations confer the specified membership role only; they **never** transfer ownership.
+- A manager link is sensitive: **any permanent, eligible account holding the link can accept it once**. Share it privately with the intended recipient; use the 24-hour expiry and revoke immediately if forwarded or exposed. Future optional email-binding or manual owner approval would strengthen this model for large deployments.
+- Only a condominium owner can generate manager invitations; a delegated manager can generate worker invitations.
+- Only the owner can remove another manager; no invitation or removal flow can revoke the condominium owner's access.
+- Revoking membership does **not** delete the member's account, reading history, photographs or audit trail; it removes their access to the condominium.
+- Invitation tokens use a **high-entropy random value**, with only a SHA-256 hash retained by the database. The raw link is shown only at creation. If lost, revoke the unused invitation and generate a new one. Invitation list contains **metadata, never secrets**.
+- Anonymous demo visitors and support-only accounts cannot redeem a permanent membership invitation. Demo data and production memberships remain isolated.
+- All existing `hc_create_worker_invite` / `hc_redeem_worker_invite` links from earlier releases remain supported until their original expiry (new links use the generic member invitation RPC).
 
-Each **real** meter has an optional `weekly_limit_m3` configured in **Ajustes → Referência de consumo** by the condominium manager. The comparison is purely indicative; **80 m³/7 days is an example, not a proven rule**. We do not enforce or guess a monthly utility tariff, and the calculation does not diagnose leaks.
+## Installation / upgrade from v0.7.0-beta
 
-Calculation for two cumulative readings:
+> **Do not execute `sql/setup.sql` on an existing Supabase project.** Do not replace your working `config.js` or upload secret/service-role keys to GitHub Pages.
 
-- `consumption_m3 = current_reading_m3 - previous_reading_m3`
-- `elapsed_days = days between the readings`
-- `weekly_equivalent_m3 = consumption_m3 × 7 ÷ elapsed_days`
-- `allowed_m3_for_period = configured_weekly_limit_m3 × elapsed_days ÷ 7`
-- Alert **above** if the normalized weekly consumption exceeds the configured reference; otherwise **within**.
+1. Back up the Supabase PostgreSQL database **and** the `hidrocondo-fotos` Storage files. Storage binaries are separate from PostgreSQL backups.
+2. Confirm SQL migrations `upgrade_0_2_0.sql` through `upgrade_0_7_0.sql` have already been applied to this project, in order.
+3. In **Supabase → SQL Editor**, run `sql/upgrade_0_8_0.sql` once, preferably on a staging database first. It adds one invitation table and five secure RPCs, with no dropped condominium, membership, reading, photo or demo data.
+4. On the GitHub Pages publishing branch (usually `main`), **replace** `app.js`, `index.html`, `styles.css`, `sw.js`, `tour.js`, `package.json`, `README.md`, `RELEASE_NOTES.md`; **add** `people.js`, `tests/people.test.js`, `sql/upgrade_0_8_0.sql`.
+5. Preserve other existing files, including `config.js` (deployment-specific), `config.example.js`, previous SQL migrations, `demo.js`, `photos.js`, `historical.js`, existing tests and icons.
+6. Commit and wait for GitHub Pages. Reload the installed PWA (the service worker cache version is now `hidrocondo-shell-v0.8.0`).
+7. Sign in as the **actual owner** of a test condominium, open **Ajustes → Pessoas e permissões**, and perform the acceptance tests below.
 
-Examples with a reference of **80 m³/7 days**:
+This ZIP contains the complete v0.8.0 source tree **except `config.js`**. Extract and upload its **contents** to the repository root. Do not upload the containing folder as a nested directory.
 
-- 83 m³ in **7 days** → 83 m³/7 days → **above**.
-- 83 m³ in **16 days** → 36.313 m³/7 days → **within**.
+## Using the new feature
 
-The text displays both original dates/duration and normalized comparison, plus a note that the result is not proof of leakage. The reference is included in the latest WhatsApp report image/text and the full PDF summaries. Previous analyses based on observed periods remain available.
+1. Open your existing condominium (for example, **Saint Bernard**) with its owner account.
+2. Go to **Ajustes → Pessoas e permissões**.
+3. Select **Síndico(a)** or **Zelador(a)** and generate the link. Management links ask for an explicit confirmation.
+4. Copy the link **immediately** and send it privately. The original token cannot be retrieved from the server later.
+5. The recipient opens the link and signs in or creates a personal account. Email confirmation may be required, depending on Supabase Auth settings. The pending link is retained in that browser so they can redeem it after confirming.
+6. The recipient clicks **Ativar meu acesso**. Their new workspace appears with the invitation's scoped role, and existing readings become visible according to that role.
+7. As a manager, return to **Pessoas com acesso** to review and remove users or revoke unused links. **No readings are deleted when membership is removed.**
 
-Demo manager guests can adjust a separate **fictional 80 m³/7 days default** by using **Painel → Referência semanal de demonstração**. Only demo managers can change that setting; it does not affect production meters.
+### Notes on existing accounts
 
-### Guided mobile-first tutorial
+- Existing account profile `sindico` can join another condominium as `zelador` via link.
+- Existing account profile `zelador` can join a condominium as `sindica` via a manager link from that condominium's owner. They gain scoped manager privileges **only in that condominium**, while their original global account profile stays unchanged.
+- Support accounts remain on the separate temporary support-grant path.
+- The account profile field still governs whether the person can **create entirely new** condominiums; it does **not** override an existing condominium membership role.
 
-The **? Ajuda** action starts a spotlight-style interactive tour that darkens the screen and highlights relevant controls. Tours have **Próximo**, **Voltar**, **Pular tour**, Escape and arrow-key support. They cover manager, worker, support, demo-manager, demo-worker and demo-administration interfaces. The first run is triggered once for each role/version and may be reopened at any time. The tour never clicks a destructive action or submits data on behalf of the user. Text is in Brazilian Portuguese.
+## Acceptance testing checklist (required before inviting real customers)
 
-### Better foreground/background session behavior
+Use a test condominium and two or three distinct test accounts (owner/manager/worker). Never test by removing your production owner's own access.
 
-- Supabase `TOKEN_REFRESHED`, `INITIAL_SESSION`, and `USER_UPDATED` no longer rebuild the screen; unchanged `SIGNED_IN` identities do not trigger a redundant bootstrap.
-- The current production tab and demo tab are restored from `sessionStorage` when the browser actually reloads.
-- Demo administration returns to the same screen after a reload when the support session is still valid.
-- Previously accepted demo invites may resume in the same tab if the session is still valid and the original link remains valid. Anonymous guest sessions can still be lost if browser storage is removed or invitations expire/rotate.
+1. **Owner:** Invite one manager. Verify the link expires after 24 hours; recipient joins without creating another condominium and sees the same existing readings.
+2. **Worker:** Invite one worker. Verify the link expires after seven days; recipient can record but cannot see manager-only settings.
+3. **Multiple roles:** A `zelador`-profile account can become `sindica` of another condo. Switching workspaces should use the per-condo role and preserve data isolation.
+4. **Management restrictions:** A delegated manager cannot generate another manager link or remove another manager. They **can** invite/remove workers. Even direct RPC calls with a modified payload should be rejected.
+5. **Owner safety:** The owner cannot be removed, by another manager or by their own RPC invocation.
+6. **One-time links:** Redeem once; second redemption fails. Revoke a different unused invitation; redeeming it subsequently fails.
+7. **No data loss:** Remove a worker from a condo; their original readings, photos and audit records remain. Their account should still work in other condominiums.
+8. **Onboarding:** Open a link on a phone without being logged in, sign up and confirm email, then return to the app and accept the saved invitation (same browser). Verify **Descartar convite** works.
+9. **Demo isolation:** An anonymous demo account cannot redeem permanent invitation or list real people.
+10. **Mobile:** Test Android and iPhone at narrow widths (320–390 px); invite copy, list, revoke confirmation and guided tutorial must be usable by touch.
+11. **Regression:** Verify demo environments, support grants, regular readings, photo upload, historical approval, dark mode, PDF and WhatsApp export still work.
 
-## Upgrade from v0.6.0-beta
+The local `npm test` suite covers JavaScript calculations, parsing and **client-side UI role affordances**. It does **not** verify Supabase RLS, RPCs, Auth, or the real smartphone/browser integrations. Test the SQL migration in a separate Supabase project before production deployment.
 
-1. **Back up database AND private Storage photos**. Create a staging project if possible. Ensure `sql/upgrade_0_6_0.sql` has already been run; don't rerun `setup.sql` or older migrations.
-2. In Supabase **SQL Editor**, execute **`sql/upgrade_0_7_0.sql` once**. It adds the per-meter limit, the demo invitation recovery field, the demo weekly limit, scoped server RPCs and RLS policy for managers to update their own meters. Existing old invites remain valid until you intentionally regenerate them.
-3. On the GitHub Pages deployment branch, **replace** `app.js`, `demo.js`, `index.html`, `styles.css`, `sw.js`, `README.md`, `RELEASE_NOTES.md`, `package.json` and **add** `limits.js`, `tour.js`, `sql/upgrade_0_7_0.sql`, `tests/limits.test.js`, `tests/tour.test.js`.
-4. **Keep `config.js` untouched.** The package intentionally contains `config.example.js` only; do not overwrite your configured connection. Never place Supabase secret/service-role keys in client code.
-5. Push the files to the branch used by Pages (usually `main`) without putting the entire project inside a new nested folder. Wait for the build, then hard refresh/reopen the PWA; the service worker cache is now `hidrocondo-shell-v0.7.0`.
-6. Sign in as support, open **Demonstrações**, and verify **Ver links** on a newly created space, then reload the app and retrieve the same URLs. Test an older v0.6 space with the explicit **Regenerar** confirmation.
-7. Sign in as an actual condominium manager and configure a limit for one meter. Record two **test** readings seven days apart (e.g., 3981 and 4064 → 83 m³), and inspect the reference comparison. Confirm that workers cannot modify reference limits.
-8. Open **? Ajuda** on manager/worker/demo screens and test the guided tour on Android, iOS Safari and a desktop browser. Check that returning from WhatsApp or backgrounding the app does not reset the current tab.
+## Operational and privacy notes
 
-## Security review / limitations
+The membership screen intentionally displays a member's email to authorized condominium managers. Share this access only with people legitimately managing the condominium and maintain appropriate privacy notices. Secrets must never be printed in URLs or logged to external analytics; the HTML already sets `referrer` to `no-referrer`. For production sales, consider requiring the intended recipient's email or owner's explicit approval before activating a manager invitation.
 
-- **Tokens are recoverable for new demo invitations**, hence are sensitive secrets stored server-side in the RLS-protected demo invitation table. No `authenticated` or `anon` grants permit direct table access. The `hc_demo_links` and `hc_demo_rotate_links` RPCs enforce ownership and specifically authorized support credentials; a demo guest can neither retrieve nor rotate links.
-- Rotating links revokes **unclaimed** invites, not existing demo memberships; revoke the entire demo workspace to end current visitors' access.
-- Threshold UPDATE uses a policy requiring `is_condo_admin`, with a trigger disallowing modification of immutable meter identity. Frontend visibility is not a security boundary.
-- This is still a beta. The Postgres migration and RLS enforcement must be tested **against a real staging Supabase instance** before production. JavaScript tests do not exercise Postgres policies or phone camera/WhatsApp integration.
-- Browser visual automation was unavailable in the authoring sandbox; verify the spotlight geometry on small screens. Manual field/device acceptance testing is required.
-- Demo anonymous sign-ins require abuse controls (e.g. verified CAPTCHA tokens) prior to broad public launch; do not relax existing RLS policies.
-- **Do not claim that 80 m³ is the condominium's real limit** without confirming what duration, meter and consumption rules the manager actually means.
+## GitHub release information
 
-## Local tests
-
-```bash
-npm test
-npm run dev
-```
-
-## Versioning / GitHub
-
-- Commit: `feat: add recoverable demo links, weekly consumption thresholds and guided tours`
-- Tag: `v0.7.0-beta`
-- Release title: `HidroCondo v0.7.0-beta — Demo Links, Weekly Limits & Guided Tours`
-- Mark as pre-release. Create the tag **after** the updated code and migration have been committed.
+- Commit: `feat: add scoped condominium invitations and member management`
+- Tag: `v0.8.0-beta`
+- Release title: `HidroCondo v0.8.0-beta — Condominium Invitations & Access Management`
+- Pre-release: **Yes**, until Supabase and mobile integration tests pass.

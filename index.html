@@ -64,7 +64,7 @@
           <legend>Como você vai usar o HidroCondo?</legend>
           <label><input type="radio" name="signup-role" value="sindico" checked> Sou síndico(a) — gerencio um condomínio</label>
           <label><input type="radio" name="signup-role" value="zelador"> Sou zelador(a) — registro as leituras</label>
-          <p class="help">O perfil define suas permissões e não pode ser mudado dentro do aplicativo.</p>
+          <p class="help">Escolha sua função inicial. Cada condomínio poderá conceder um papel diferente à mesma conta.</p>
         </fieldset>
         <label for="auth-email">E-mail</label>
         <input id="auth-email" type="email" autocomplete="email" required placeholder="voce@exemplo.com">
@@ -80,7 +80,7 @@
     <section id="screen-profile" class="onboard" hidden>
       <form id="legacy-profile-form" class="panel narrow-form">
         <h1>Configure seu perfil</h1>
-        <p>Sua conta é anterior à separação dos perfis. Escolha uma única vez.</p>
+        <p>Sua conta é anterior à separação dos perfis. Essa opção inicial não impede receber convites para outros papéis em outros condomínios.</p>
         <label><input type="radio" name="legacy-role" value="sindico" checked> Sou síndico(a)</label>
         <label><input type="radio" name="legacy-role" value="zelador"> Sou zelador(a)</label>
         <button type="submit" class="btn btn-primary btn-block">Confirmar perfil</button>
@@ -92,7 +92,7 @@
         <h2>Seus condomínios</h2><p>Selecione onde deseja trabalhar. Nenhum vínculo é removido ao trocar.</p>
         <div id="workspace-list" class="workspace-list"></div>
       </div>
-      <div class="onboard-actions"><button id="onboard-logout" type="button" class="btn btn-ghost btn-small">Sair da conta</button></div>
+      <div class="onboard-actions"><button id="ignore-member-invite" type="button" class="btn btn-ghost btn-small" hidden>Descartar convite recebido</button><button id="onboard-logout" type="button" class="btn btn-ghost btn-small">Sair da conta</button></div>
       <div id="demo-onboard-entry" class="panel demo-creator-entry" hidden><div><h2>🧪 Ambiente de demonstração</h2><p>Crie links para síndico(a) e zelador(a) testarem com dados fictícios, sem cadastro.</p></div><button id="demo-onboard-button" type="button" class="btn btn-primary">Gerenciar demonstrações</button></div>
       <div class="onboard-grid">
         <form id="create-condo-form" class="panel" hidden>
@@ -103,12 +103,12 @@
           <button class="btn btn-primary btn-block" type="submit">Criar condomínio</button>
         </form>
         <form id="join-condo-form" class="panel" hidden>
-          <div class="tile-icon">🔗</div><h2>Ativar acesso do zelador(a)</h2>
-          <p>Você pode trabalhar em vários condomínios. Cole um novo convite para adicionar outro.</p>
+          <div class="tile-icon">🔗</div><h2>Entrar em condomínio existente</h2>
+          <p>Recebeu um convite de síndico(a) ou zelador(a)? Cole o link para participar sem criar outro condomínio.</p>
           <label for="join-code">Link de ativação</label>
-          <input id="join-code" required autocomplete="off" placeholder="https://.../HidroCondo/?convite=...">
+          <input id="join-code" required autocomplete="off" placeholder="https://.../HidroCondo/?acesso=...">
           <button class="btn btn-primary btn-block" type="submit">Ativar meu acesso</button>
-          <p class="help">Convites são individuais, usados uma única vez e vencem em 7 dias.</p>
+          <p class="help">Convites são individuais e de uso único. Os de síndico(a) vencem em 24 horas e os de zelador(a) em 7 dias.</p>
         </form>
         <form id="support-join-form" class="panel" hidden>
           <div class="tile-icon">🛠️</div><h2>Suporte temporário</h2>
@@ -223,10 +223,27 @@
       <section id="tab-settings" class="tab-content" hidden>
         <div class="panel"><h2>Condomínio</h2><button id="settings-switch-condo" type="button" class="btn btn-secondary btn-small">⇄ Trocar de condomínio</button><p id="settings-condo" class="hint"></p><p id="settings-role" class="hint"></p></div>
         <div id="admin-settings" class="panel" hidden>
-          <h2>Convidar zelador(a)</h2>
-          <p>Crie um link pessoal. Ele funciona apenas uma vez e expira em 7 dias. Envie somente à pessoa autorizada.</p>
-          <button id="make-worker-invite" class="btn btn-secondary" type="button">🔗 Gerar link de ativação</button>
-          <div id="worker-invite-box" class="invite-bar" hidden><input id="invite-code" readonly aria-label="Link de ativação"><button id="copy-code" class="btn btn-secondary btn-small" type="button">Copiar link</button></div>
+          <h2 id="people-heading">Pessoas e permissões</h2>
+          <p>Convide pessoas para este condomínio sem criar outro cadastro de condomínio. A mesma conta pode ter papéis diferentes em locais diferentes.</p>
+          <form id="member-invite-form" class="people-invite-form">
+            <label for="member-invite-role">Acesso que deseja conceder</label>
+            <select id="member-invite-role" required>
+              <option value="zelador">Zelador(a) — registrar leituras</option>
+              <option value="sindica">Síndico(a) — administrar condomínio</option>
+            </select>
+            <p id="member-invite-advice" class="help"></p>
+            <button id="create-member-invite-button" type="submit" class="btn btn-primary btn-block">🔗 Gerar link de convite</button>
+          </form>
+          <div id="member-invite-result" class="invite-bar" hidden>
+            <input id="member-invite-link" readonly aria-label="Novo link de convite">
+            <button id="copy-member-invite" class="btn btn-secondary btn-small" type="button">Copiar link</button>
+          </div>
+          <p class="help">O link aparece uma vez: copie antes de sair. Se perdê-lo, revogue o convite e gere outro. Qualquer pessoa que receber o link poderá aceitá-lo, por isso compartilhe somente em conversa privada.</p>
+          <hr class="soft-line">
+          <div class="people-head"><h2>Pessoas com acesso</h2><button id="refresh-people" type="button" class="btn btn-ghost btn-small">↻ Atualizar lista</button></div>
+          <div id="condo-people-list" class="people-list" aria-live="polite"></div>
+          <h2>Convites aguardando uso</h2>
+          <div id="condo-member-invites" class="people-list" aria-live="polite"></div>
           <hr class="soft-line"><h2>Suporte técnico temporário</h2>
           <p>Gere um link válido por <strong>15 minutos</strong>. Só uma conta técnica cadastrada como suporte pode ativá-lo. O acesso dura até <strong>90 minutos</strong>, permite consultar e corrigir medições e pode ser revogado antecipadamente.</p>
           <button id="make-support-invite" class="btn btn-ghost" type="button">🛠️ Autorizar suporte por link</button>
@@ -336,7 +353,7 @@
       <div class="panel"><div class="panel-heading"><h2>Meus ambientes de demonstração</h2><button id="demo-admin-refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div><p class="help">Em cada ambiente ativo, use “Ver links”. Para convites gerados antes da v0.7.0, use “Regenerar”: os links antigos serão invalidados, mas sessões já ativadas permanecem até o término.</p><div id="demo-admin-list"></div></div>
     </section>
 
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.7.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.8.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

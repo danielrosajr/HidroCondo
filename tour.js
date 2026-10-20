@@ -7,7 +7,9 @@ export function tourSteps(mode){
       S('#limit-alert','Referência de consumo','Configure o limite semanal e acompanhe se o consumo está dentro da margem definida. Não é um diagnóstico de vazamento.','dashboard'),
       S('[data-tab="history"]','Histórico e documentos','Consulte medições anteriores, fotos e exporte CSV ou PDF.'),
       S('[data-tab="import"]','Históricos antigos','Importe datas e números anteriores. Os pedidos enviados pelo zelador aparecem aqui para aprovação.'),
-      S('[data-tab="settings"]','Ajustes do condomínio','Convide zeladores, ajuste o limite de consumo de cada hidrômetro e autorize suporte temporário.'),
+      S('[data-tab="settings"]','Ajustes do condomínio','Gerencie convites de síndico(a) e zelador(a), limites de consumo e suporte temporário.'),
+      S('#people-heading','Pessoas e acessos','Gere links de convite para adicionar pessoas ao condomínio. Só o proprietário pode convidar outros síndicos.','settings'),
+      S('#condo-people-list','Gerenciar acessos','Confira os participantes e remova acessos quando necessário. Remover não apaga leituras antigas.','settings'),
       S('#meter-limit-form','Limite de 7 dias','Defina a referência em m³ para cada hidrômetro, por exemplo 80. O aplicativo compara intervalos de diferentes durações proporcionalmente.','settings')
     ],
     worker:[

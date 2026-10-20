@@ -1,3 +1,4 @@
+import {canInviteRole,canRemoveMember,inviteStatus,memberRoleLabel} from './people.js';
 import {parseWholeMeter, parseDecimalMeter, readValue, toMillis, toM3String, formatM3, buildIntervals, analyzeLatest, localDate, fmtDate, diffDays} from './math.js';
 import {getWaterInsights} from './analysis.js';
 import {parseHistoricalText,previewHistorical} from './historical.js';
@@ -39,6 +40,21 @@ function currentMeterId(){return state.meterId || state.meters[0]?.id;}
 function meterReadings(id=currentMeterId()){return state.readings.filter(x=>x.meter_id===id).sort((a,b)=>a.measured_on.localeCompare(b.measured_on));}
 function getIntervals(id=currentMeterId()){return buildIntervals(meterReadings(id));}
 const activeKey=()=>`hidrocondo_active_${state.user?.id||'guest'}`;
+const PENDING_MEMBER_KEY='hc_pending_condo_invite_v080';
+const PENDING_ROLE_KEY='hc_pending_condo_invite_role_v080';
+function pendingMemberInvite(){
+  const p=new URLSearchParams(location.search).get('acesso');
+  if(p && /^[0-9a-f]{64}$/i.test(p)){
+    localStorage.setItem(PENDING_MEMBER_KEY,p);
+    const role=new URLSearchParams(location.search).get('papel');
+    if(['sindica','zelador'].includes(role))localStorage.setItem(PENDING_ROLE_KEY,role);
+    return p;
+  }
+  const saved=localStorage.getItem(PENDING_MEMBER_KEY);
+  return saved && /^[0-9a-f]{64}$/i.test(saved)?saved:null;
+}
+function clearPendingMemberInvite(){localStorage.removeItem(PENDING_MEMBER_KEY);localStorage.removeItem(PENDING_ROLE_KEY);clearInviteQuery();}
+
 function viewWorker(){return state.role==='zelador'||state.previewWorker;}
 function userDisplayName(){return state.user?.user_metadata?.full_name?.trim() || state.user?.email?.split('@')[0] || 'Responsável';}
 
@@ -77,10 +93,10 @@ async function bootstrap(){
   }
   state.workspaces=spaces;
   const params=new URLSearchParams(location.search);
-  const invitePending=(params.has('convite')&&state.profile==='zelador')||(params.has('suporte')&&state.profile==='suporte');
+  const invitePending=Boolean(pendingMemberInvite())||(params.has('convite')&&state.profile==='zelador')||(params.has('suporte')&&state.profile==='suporte');
   const stored=localStorage.getItem(activeKey());
   const chosen=spaces.find(x=>x.id===stored) || (spaces.length===1?spaces[0]:null);
-  state.member=null;state.condo=null;state.role=null;
+  state.member=null;state.condo=null;state.role=null;state.people=null;
   if(!state.pickerOpen&&!invitePending&&chosen){
     state.member=chosen.member||null;
     state.role=chosen.role;
@@ -95,16 +111,19 @@ async function bootstrap(){
       const caption=document.createElement('small');caption.textContent=item.role==='sindica'?'Síndico(a)':item.role==='zelador'?'Zelador(a)':'Suporte temporário';
       btn.append(title,caption);return btn;
     }));
-    $('create-condo-form').hidden=!canCreateCondo();
-    $('join-condo-form').hidden=state.profile!=='zelador';
+    $('create-condo-form').hidden=!canCreateCondo()||Boolean(pendingMemberInvite());
+    $('join-condo-form').hidden=state.profile==='suporte';
+    $('ignore-member-invite').hidden=!pendingMemberInvite();
     $('support-join-form').hidden=state.profile!=='suporte';
-    $('onboard-title').textContent=spaces.length?'Escolha um condomínio':'Ativar seu primeiro condomínio';
-    $('onboard-subtitle').textContent=spaces.length?
+    $('onboard-title').textContent=pendingMemberInvite()?'Você recebeu um convite':spaces.length?'Escolha um condomínio':'Ativar seu primeiro condomínio';
+    $('onboard-subtitle').textContent=pendingMemberInvite()?
+      'Aceite o link para acessar o condomínio existente. Você não precisa criá-lo novamente.':spaces.length?
       'Seu e-mail pode acessar vários condomínios. Selecione um ou adicione outro.':
       state.profile==='sindico'?'Crie seu condomínio. Você poderá adicionar outros depois.':
-      state.profile==='zelador'?'Cole o convite do(a) síndico(a).':
+      state.profile==='zelador'?'Cole o convite do condomínio recebido do(a) síndico(a).':
       canCreateCondo()?'Crie um novo condomínio ou ative um convite de suporte.':'Ative um convite de suporte temporário.';
-    if(params.get('convite'))$('join-code').value=homeUrl()+'?convite='+params.get('convite');
+    if(pendingMemberInvite())$('join-code').value=homeUrl()+'?acesso='+pendingMemberInvite();
+    else if(params.get('convite'))$('join-code').value=homeUrl()+'?convite='+params.get('convite');
     if(params.get('suporte'))$('support-join-code').value=homeUrl()+'?suporte='+params.get('suporte');
     state.pickerOpen=false;
     return screens('onboard');
@@ -112,6 +131,8 @@ async function bootstrap(){
   state.pickerOpen=false;
   state.previewWorker=false;
   $('top-condo').textContent=state.condo.name;
+  $('member-invite-result').hidden=true;
+  $('member-invite-link').value='';
   $('role-label').textContent=state.role==='sindica'?'PAINEL DO(A) SÍNDICO(A)':
     state.role==='suporte'?'SUPORTE TEMPORÁRIO':'ÁREA DO ZELADOR(A)';
   $('settings-condo').textContent=state.condo.name;
@@ -124,7 +145,7 @@ async function bootstrap(){
   screens('app');
   const resumeTab=sessionStorage.getItem(`hc_active_tab_${state.user.id}_${state.condo.id}`);
   setTab(resumeTab|| (state.role==='zelador'?'new':'dashboard'));
-  if(isManager())await loadSupportGrants();
+  if(isManager()){await loadSupportGrants();await loadCondoPeople();}
   showTutorialOnce();
 }
 
@@ -372,13 +393,79 @@ function extractToken(raw,type){
   if(!/^[a-f0-9]{64}$/i.test(token))throw Error('Link inválido. Solicite um novo link de ativação.');
   return token;
 }
-async function createWorkerInvite(){
-  if(!isManager())throw Error('Somente síndico(a) pode criar links.');
-  const {data,error}=await state.db.rpc('hc_create_worker_invite',{p_condo:state.condo.id});
+async function loadCondoPeople(){
+  if(!isManager() || !state.condo)return;
+  const {data,error}=await state.db.rpc('hc_list_condo_people',{p_condo:state.condo.id});
   if(error)throw error;
-  $('invite-code').value=homeUrl()+'?convite='+data;
-  $('worker-invite-box').hidden=false;
-  toast('Link de uso único gerado. Envie ao zelador(a).');
+  state.people=data;
+  $('member-invite-role').querySelector('option[value="sindica"]').disabled=!data.is_owner;
+  if(!data.is_owner && $('member-invite-role').value==='sindica')$('member-invite-role').value='zelador';
+  $('member-invite-advice').textContent=data.is_owner?
+    'Você é o proprietário. Só você pode convidar outro(a) síndico(a) ou remover um administrador.':
+    'Você pode convidar zeladores e remover seus acessos. Apenas o proprietário pode gerenciar outros síndicos.';
+  renderCondoPeople(data);
+}
+function renderCondoPeople(data){
+  const members=$('condo-people-list');members.replaceChildren();
+  for(const person of data.members||[]){
+    const row=document.createElement('div');row.className='people-row';
+    const who=document.createElement('div');who.className='people-identity';
+    const title=document.createElement('strong');title.textContent=person.name || 'Usuário';
+    const small=document.createElement('small');small.textContent=`${person.email||''} · ${person.owner?'Proprietário(a)':memberRoleLabel(person.role)}`;
+    who.append(title,small);row.append(who);
+    const canRemove=canRemoveMember(true,data.is_owner,person);
+    if(canRemove){const btn=document.createElement('button');btn.type='button';btn.className='btn btn-ghost btn-small';
+      btn.textContent='Remover acesso';btn.dataset.removeMember=person.user_id;row.append(btn);}
+    members.append(row);
+  }
+  if(!(data.members||[]).length)members.textContent='Nenhuma pessoa cadastrada.';
+  const invites=$('condo-member-invites');invites.replaceChildren();
+  const relevant=(data.invites||[]).filter(x=>inviteStatus(x)==='pending');
+  for(const invite of relevant){
+    const row=document.createElement('div');row.className='people-row';
+    const info=document.createElement('div');info.className='people-identity';
+    const title=document.createElement('strong');title.textContent=invite.role==='sindica'?'Convite de síndico(a)':'Convite de zelador(a)';
+    const small=document.createElement('small');small.textContent=`Expira em ${new Date(invite.expires_at).toLocaleString('pt-BR')}`;
+    info.append(title,small);row.append(info);
+    if(data.is_owner||invite.role==='zelador'){
+      const btn=document.createElement('button');btn.className='btn btn-ghost btn-small';btn.type='button';btn.dataset.revokeMemberInvite=invite.id;btn.textContent='Revogar';row.append(btn);
+    }
+    invites.append(row);
+  }
+  if(!relevant.length){const p=document.createElement('p');p.className='help';p.textContent='Nenhum convite pendente.';invites.append(p);}
+}
+async function createCondoMemberInvite(e){
+  e.preventDefault();
+  if(!isManager()||state.previewWorker)throw Error('Acesso restrito à administração.');
+  const p_role=$('member-invite-role').value;
+  if(!canInviteRole(isManager(),state.people?.is_owner,p_role))throw Error('Sem permissão para convidar este perfil.');
+  if(p_role==='sindica'&&!confirm('Este link dará acesso administrativo às medições, convites e configurações. Envie somente à pessoa certa. Continuar?'))return;
+  const btn=$('create-member-invite-button');setBusy(btn,true,'Criando...');
+  try{
+    const {data,error}=await state.db.rpc('hc_create_member_invite',{p_condo:state.condo.id,p_role});
+    if(error)throw error;
+    $('member-invite-link').value=homeUrl()+'?acesso='+data+'&papel='+p_role;
+    $('member-invite-result').hidden=false;
+    await loadCondoPeople();
+    toast('Convite criado. Copie o link e envie à pessoa autorizada.');
+  }finally{setBusy(btn,false);}
+}
+async function onPeopleAction(e){
+  const rm=e.target.closest('[data-remove-member]');
+  const rev=e.target.closest('[data-revoke-member-invite]');
+  if(!rm&&!rev)return;
+  if(!isManager()||state.previewWorker)throw Error('Sem permissão para gerenciar pessoas.');
+  if(rm){
+    const person=state.people?.members?.find(p=>p.user_id===rm.dataset.removeMember);
+    if(!person||!confirm(`Remover o acesso de ${person.name || person.email} a ${state.condo.name}? A conta e as leituras já feitas serão preservadas.`))return;
+    const {error}=await state.db.rpc('hc_remove_condo_member',{p_condo:state.condo.id,p_user:person.user_id});if(error)throw error;
+    toast('Acesso removido. A conta e o histórico foram preservados.');
+  }else{
+    if(!confirm('Revogar este convite? O link deixará de funcionar para novos acessos.'))return;
+    const {error}=await state.db.rpc('hc_revoke_member_invite',{p_invite:rev.dataset.revokeMemberInvite});if(error)throw error;
+    toast('Convite revogado.');
+  }
+  await loadCondoPeople();
 }
 async function createSupportInvite(){
   if(!isManager())throw Error('Somente síndico(a) pode autorizar suporte.');
@@ -785,6 +872,7 @@ function exportCSV(){
   downloadBlob(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),`hidrocondo-${localDate()}.csv`);
 }
 async function init(){
+  pendingMemberInvite(); // Preserve a valid invite across email-confirmation redirects.
   if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);
   const cfg=window.HIDRO_CONFIG;
   if(!cfg?.supabaseUrl?.startsWith('https://')||!cfg?.supabaseKey||cfg.supabaseUrl.includes('SEU-PROJETO')||cfg.supabaseKey.includes('SUA_CHAVE')||!window.supabase){screens('setup');return;}
@@ -833,13 +921,14 @@ function bindEvents(){
   $('logout').addEventListener('click',signOut);
   $('onboard-logout').addEventListener('click',signOut);
   function showWorkspacePicker(){clearReadingPhoto();resetHistoricalPhotos();state.previewWorker=false;state.pickerOpen=true;state.condo=null;state.meters=[];state.readings=[];state.historyRequests=[];state.lastSaved=null;state.pendingHistory=null;reportCache.clear();bootstrap().catch(err=>toast(apiError(err),true));}
+  $('ignore-member-invite').addEventListener('click',guard(async()=>{clearPendingMemberInvite();state.pickerOpen=true;await bootstrap();}));
   $('switch-condo').addEventListener('click',showWorkspacePicker);
   $('settings-switch-condo').addEventListener('click',showWorkspacePicker);
   $('workspace-list').addEventListener('click',guard(async e=>{
     const btn=e.target.closest('button[data-workspace]');if(!btn)return;
     const space=state.workspaces.find(x=>x.id===btn.dataset.workspace);if(!space)return;
     localStorage.setItem(activeKey(),space.id);state.pickerOpen=false;
-    clearInviteQuery();await bootstrap();
+    clearPendingMemberInvite();await bootstrap();
   }));
   $('worker-preview').addEventListener('click',toggleWorkerPreview);
   $('exit-worker-preview').addEventListener('click',toggleWorkerPreview);
@@ -850,9 +939,15 @@ function bindEvents(){
   }));
   $('join-condo-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const btn=e.currentTarget.querySelector('button');setBusy(btn,true);
-    try{const token=extractToken($('join-code').value,'convite');
-      const {data,error}=await state.db.rpc('hc_redeem_worker_invite',{p_token:token});
-      if(error)throw error;localStorage.setItem(activeKey(),data);state.pickerOpen=false;clearInviteQuery();await bootstrap();toast('Acesso ativado! Agora você pode registrar medições.');}finally{setBusy(btn,false);}
+    try{
+      const raw=$('join-code').value.trim();
+      const legacy=raw.includes('?convite=')||raw.includes('&convite=');
+      const token=extractToken(raw,legacy?'convite':'acesso');
+      const {data,error}=await state.db.rpc(legacy?'hc_redeem_worker_invite':'hc_redeem_member_invite',{p_token:token});
+      if(error)throw error;
+      localStorage.setItem(activeKey(),data);state.pickerOpen=false;clearPendingMemberInvite();
+      await bootstrap();toast('Convite aceito! Seu condomínio foi adicionado à lista.');
+    }finally{setBusy(btn,false);}
   }));
   $('support-join-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const token=extractToken($('support-join-code').value,'suporte');
@@ -936,8 +1031,11 @@ function bindEvents(){
     const {error}=await state.db.from('meters').insert({condominium_id:state.condo.id,name:$('meter-name').value.trim()});
     if(error)throw error;$('meter-name').value='';await loadData();toast('Hidrômetro adicionado.');
   }));
-  $('make-worker-invite').addEventListener('click',guard(createWorkerInvite));
-  $('copy-code').addEventListener('click',guard(async()=>copyValue($('invite-code').value)));
+  $('member-invite-form').addEventListener('submit',guard(createCondoMemberInvite));
+  $('copy-member-invite').addEventListener('click',guard(async()=>copyValue($('member-invite-link').value)));
+  $('refresh-people').addEventListener('click',guard(loadCondoPeople));
+  $('condo-people-list').addEventListener('click',guard(onPeopleAction));
+  $('condo-member-invites').addEventListener('click',guard(onPeopleAction));
   $('make-support-invite').addEventListener('click',guard(createSupportInvite));
   $('copy-support-link').addEventListener('click',guard(async()=>copyValue($('support-invite-link').value)));
   $('active-support').addEventListener('click',guard(async e=>{
@@ -961,13 +1059,22 @@ function changeAuthMode(mode){state.authMode=mode;const signup=mode==='signup';
   if(workerLink){
     document.querySelector('input[name="signup-role"][value="zelador"]').checked=true;
     document.querySelector('input[name="signup-role"][value="sindico"]').disabled=true;
-  }else document.querySelector('input[name="signup-role"][value="sindico"]').disabled=false;
+  }else {
+    document.querySelector('input[name="signup-role"][value="sindico"]').disabled=false;
+    if(pendingMemberInvite()){
+      const hinted=localStorage.getItem(PENDING_ROLE_KEY);
+      const suggested=document.querySelector(`input[name="signup-role"][value="${hinted==='zelador'?'zelador':'sindico'}"]`);
+      if(suggested)suggested.checked=true; // Visual default only; server token defines the actual condominium role.
+    }
+  }
   $('auth-mode-login').classList.toggle('selected',!signup);$('auth-mode-signup').classList.toggle('selected',signup);
   $('auth-title').textContent=signup?'Criar meu acesso':'Bem-vindo de volta';
   $('signup-role-panel').hidden=!signup;
   $('auth-name').hidden=!signup;$('auth-name-label').hidden=!signup;$('auth-name').required=signup;
   $('auth-submit').textContent=signup?'Criar conta':'Entrar';
-  $('auth-helper').textContent=signup?'Cada perfil recebe somente as opções e permissões necessárias.':'Acesso exclusivo para pessoas autorizadas do condomínio.';
+  $('auth-helper').textContent=pendingMemberInvite()?
+    'Você recebeu um convite. Faça login ou crie sua conta; depois confirme em Ativar acesso para entrar no condomínio.':
+    (signup?'Sua conta poderá participar de vários condomínios, com permissões distintas.':'Acesso exclusivo para pessoas autorizadas do condomínio.');
 }
 function applyTheme(theme){
   state.theme=theme;

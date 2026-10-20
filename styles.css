@@ -66,3 +66,35 @@
 .submitted-rows .submitted-row-line{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .submitted-rows .submitted-row-line button{margin-left:auto}
 @media(max-width:550px){.photo-choices{display:grid;grid-template-columns:1fr 1fr;width:100%}.photo-choice{min-width:0;min-height:53px}.historical-photo-row{display:block}.historical-photo-row .photo-choices{margin:10px 0}}
+
+/* v0.6.0: high-visibility disposable demo (mobile first). */
+.demo-splash{width:min(100%,780px);margin:30px auto 44px}
+.demo-hero-warning,.demo-banner{border:3px solid #b64813;background:#fff0db;color:#68250a;border-radius:16px;padding:20px}
+.demo-hero-warning{display:flex;gap:15px;align-items:flex-start;box-shadow:0 12px 32px #a34a1426}
+.demo-hero-warning h1{color:#68250a;font-weight:900;line-height:1.12;letter-spacing:-.8px;font-size:clamp(1.48rem,4vw,2.4rem)}
+.demo-hero-warning p{color:#68250a;font-weight:580;margin-bottom:0}
+.demo-giant-icon{font-size:clamp(2.6rem,8vw,4.2rem);flex-shrink:0}
+.demo-warn-kicker{font-size:.92rem;letter-spacing:.1em;font-weight:950;color:#9f3508}
+.demo-disclaimer{margin:18px 0;padding:24px}.demo-disclaimer li{line-height:1.55;margin:12px 0}.demo-disclaimer ul{padding-left:24px}
+.demo-checkbox{display:flex;align-items:flex-start;gap:12px;padding:14px;border:2px solid var(--line);border-radius:12px;margin-top:20px;cursor:pointer}
+.demo-checkbox input{width:23px;height:23px;flex:0 0 23px;accent-color:var(--primary)}
+.demo-screen{padding:18px 0 32px}.demo-banner{position:sticky;top:0;z-index:30;box-shadow:0 5px 16px #a34a1430;margin-bottom:20px;display:flex;flex-direction:column;gap:5px;padding:14px 18px}
+.demo-banner strong{font-weight:900;letter-spacing:.02em;font-size:1.02rem}
+.demo-banner span{font-size:.88rem;line-height:1.4}
+.demo-screen-top,.demo-admin-header{display:flex;align-items:flex-start;justify-content:space-between;gap:13px;flex-wrap:wrap;padding:8px 0 20px}
+.demo-screen-top h1{margin:5px 0}.demo-screen-top p{margin:4px 0}.demo-tabs{overflow:auto}
+.demo-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.demo-stats .metric{font-size:1.3rem}
+.demo-entry{padding:15px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:7px}
+.demo-entry small{font-size:.83rem;color:var(--muted)}.demo-actions{display:flex;flex-wrap:wrap;gap:9px}
+.demo-request{border-bottom:1px solid var(--line);padding:15px 0}.demo-request .pill{margin-left:10px}
+.demo-request details{margin:10px 0}.demo-request summary{cursor:pointer;min-height:35px;color:var(--primary)}
+.demo-admin-entry{flex-direction:row;justify-content:space-between;align-items:center;gap:8px}
+.demo-admin-entry div{display:flex;flex-direction:column;gap:7px}.demo-creator-entry{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.demo-creator-entry p{margin:4px 0}.demo-link-row{display:flex;gap:8px}.demo-link-row input{min-width:0}
+.demo-photo-preview{display:block;width:100%;max-height:240px;object-fit:contain;margin:13px 0;border-radius:12px;background:var(--panel)}
+.demo-finish{margin-top:25px;border-style:dashed}.demo-finish p{max-width:630px}
+:root[data-theme="dark"] .demo-hero-warning,:root[data-theme="dark"] .demo-banner{background:#562b13;color:#ffdcaf;border-color:#e29a45}
+:root[data-theme="dark"] .demo-hero-warning h1,:root[data-theme="dark"] .demo-hero-warning p,:root[data-theme="dark"] .demo-warn-kicker{color:#ffdcaf}
+@media(prefers-color-scheme:dark){:root[data-theme="auto"] .demo-hero-warning,:root[data-theme="auto"] .demo-banner{background:#562b13;color:#ffdcaf;border-color:#e29a45}:root[data-theme="auto"] .demo-hero-warning h1,:root[data-theme="auto"] .demo-hero-warning p,:root[data-theme="auto"] .demo-warn-kicker{color:#ffdcaf}}
+@media(max-width:620px){.demo-hero-warning{flex-direction:column;padding:19px 16px}.demo-splash{margin-top:17px}.demo-admin-entry{align-items:flex-start;flex-direction:column}.demo-creator-entry{flex-direction:column;align-items:stretch}.demo-link-row{flex-direction:column}.demo-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.demo-stats .summary-tile:last-child{grid-column:1/-1}.demo-banner{padding:13px 12px}.demo-banner strong{font-size:.9rem}.demo-screen-top .button-row{width:100%}.demo-screen-top .button-row .btn{flex:1}}
+@media print{.topbar,.demo-banner,.demo-tabs,.demo-actions,.site-footer,#demo-signup,#demo-leave,#demo-reload,#demo-print,#demo-share{display:none!important}body{color:#000;background:#fff}.demo-screen-top:before{content:'DEMONSTRAÇÃO - DADOS FICTÍCIOS, SEM VALIDADE PARA GESTÃO REAL';display:block;color:#900;font-size:18px;font-weight:900}.demo-tab{display:block!important}.panel{box-shadow:none;border:1px solid #aaa;break-inside:avoid}}

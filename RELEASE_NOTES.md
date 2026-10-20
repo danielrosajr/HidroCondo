@@ -1,20 +1,27 @@
-# HidroCondo v0.5.0-beta — Photo Upload & Historical Attachments
+# HidroCondo v0.6.0-beta — Invitation-Only Demo Workspaces
 
-This update improves photo upload on mobile, reduces Supabase Storage usage and enables optional image evidence for imported historical readings.
+## Features
 
-## New features
+- Add no-signup, role-specific demo links powered by Supabase anonymous sign-in.
+- Create 24-hour, 72-hour, or 7-day fictional workspaces with predefined sample readings.
+- Issue separate manager and worker demo invitations (one, three or five visitors per role).
+- Show a mandatory full-size pre-entry warning and a prominent persistent demo banner.
+- Let workers register fictional readings and submit historical data for a demo manager's approval.
+- Synchronize fictional readings between demo participants without mixing them with production data.
+- Display fictitious consumption charts and summaries, and allow demo CSV/print reports.
+- Keep camera/gallery photos as **local-only previews**, never uploading them in demo mode.
+- Enforce demo roles, expiration, revocation, limited uses, and monotonic meter values in Postgres RPCs.
+- Add administrator-side demo list and early-revoke action.
+- Update Portuguese tutorials, technical documentation and test coverage.
 
-- Choose a photo from the **camera or gallery** for current meter readings.
-- Add an **optional photo for each historical measurement** during the import preview. Historical entries without images remain supported.
-- Automatically optimize images to WebP before upload, preserving aspect ratio and using adaptive quality/resolution to help keep meter digits legible.
-- Display attached historical photos in the manager approval queue and carry them into approved readings and PDF reports.
-- Updated the in-app tutorial for both managers and workers.
+## Security and scope
 
-## Security and compatibility
+- New segregated `hc_demo_*` tables with RLS and no direct client grants.
+- Harden real-condominium membership helpers and worker invitation redemption against anonymous identities.
+- Demo records are temporarily persisted for interaction, but are **disposable**. They do not convert into permanent condominium records.
+- Anonymous sign-in must be enabled **only after applying migration `sql/upgrade_0_6_0.sql`**.
+- Bot/CAPTCHA hardening and production acceptance testing are required before mass public use.
 
-- New `sql/upgrade_0_5_0.sql` migration updates the RLS policy and verifies worker-owned photo paths in historical submission and approval RPCs. Approval remains atomic.
-- All existing data and photographs are preserved; do not rerun `setup.sql`.
-- Keep your existing Supabase `config.js`; no secret keys belong in the public repository.
-- Photography, Storage permissions and PDF export still require end-to-end tests on the actual Supabase project and mobile devices.
+## Upgrade notes
 
-**Status:** Beta / testing required.
+Back up first. Apply `sql/upgrade_0_6_0.sql` after the v0.5.0 migration, then enable Anonymous Sign-Ins. Replace the web app files and add `demo.js`. Preserve `config.js`. This release is in beta; no live database or client-device integration tests have been performed here.

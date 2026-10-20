@@ -25,6 +25,7 @@
       </div>
       <div id="account-top" class="account-top" hidden>
         <span id="top-condo" class="top-condo"></span>
+        <button id="demos-button" class="btn btn-secondary btn-small" type="button" hidden>🧪 Demonstrações</button>
         <button id="switch-condo" class="btn btn-secondary btn-small" type="button">⇄ Condomínios</button>
         <button id="logout" class="btn btn-ghost btn-small" type="button">Sair da conta</button>
       </div>
@@ -92,6 +93,7 @@
         <div id="workspace-list" class="workspace-list"></div>
       </div>
       <div class="onboard-actions"><button id="onboard-logout" type="button" class="btn btn-ghost btn-small">Sair da conta</button></div>
+      <div id="demo-onboard-entry" class="panel demo-creator-entry" hidden><div><h2>🧪 Ambiente de demonstração</h2><p>Crie links para síndico(a) e zelador(a) testarem com dados fictícios, sem cadastro.</p></div><button id="demo-onboard-button" type="button" class="btn btn-primary">Gerenciar demonstrações</button></div>
       <div class="onboard-grid">
         <form id="create-condo-form" class="panel" hidden>
           <div class="tile-icon">🏢</div><h2>Meu condomínio</h2>
@@ -236,7 +238,93 @@
         <div class="panel"><h2>Sobre o aplicativo</h2><p>Fotos protegidas, leituras em m³ com três casas decimais e cálculos automáticos. Os dados são sincronizados online; o envio de medição exige internet.</p><p>Para evitar perda de dados, exporte o CSV periodicamente. Não compartilhe senhas nem a chave secreta do Supabase.</p></div>
       </section>
     </section>
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.5.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
+
+    <!-- Distinct demo experience. No production tables or photos are touched. -->
+    <section id="screen-demo-welcome" class="demo-splash" hidden>
+      <div class="demo-hero-warning" role="alert">
+        <div class="demo-giant-icon">⚠️</div>
+        <div><span class="demo-warn-kicker">ATENÇÃO — AMBIENTE DE TESTES</span>
+          <h1>ISTO É UMA DEMONSTRAÇÃO, NÃO UM CONDOMÍNIO REAL.</h1>
+          <p>Os números, gráficos e medições iniciais são <strong>100% FICTÍCIOS</strong>. Eles servem apenas para você conhecer o HidroCondo. Não use dados pessoais nem medições reais aqui.</p>
+        </div>
+      </div>
+      <div class="panel demo-disclaimer">
+        <h2>Antes de experimentar, saiba que:</h2>
+        <ul>
+          <li>As medições digitadas são apenas testes e <strong>podem ser excluídas sem aviso após o prazo</strong>.</li>
+          <li>As fotos escolhidas são <strong>pré-visualizadas no dispositivo, mas NÃO são enviadas nem salvas</strong>.</li>
+          <li>Se sair, limpar o navegador, mudar de celular ou perder o link, <strong>poderá perder o acesso e as configurações</strong>.</li>
+          <li>Não há compromisso de continuidade, backup ou conversão automática dos registros para uma conta real.</li>
+          <li>Para utilização verdadeira, será necessário criar uma conta e configurar um condomínio real.</li>
+        </ul>
+        <label class="demo-checkbox"><input id="demo-accept" type="checkbox"> <span>Li e entendi que este é um teste com informações fictícias e descartáveis.</span></label>
+        <button id="demo-enter" class="btn btn-primary btn-xl btn-block" type="button" disabled>▶ Experimentar sem cadastro</button>
+      </div>
+    </section>
+
+    <section id="screen-demo" class="demo-screen" hidden>
+      <div class="demo-banner" role="status" aria-live="off">
+        <strong>⚠️ MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS E DESCARTÁVEIS</strong>
+        <span>Não use informações reais. Fotos não são salvas. Ao sair ou após o prazo, você pode perder todos os testes.</span>
+      </div>
+      <div class="demo-screen-top"><div><span id="demo-role" class="eyebrow">Visitante de teste</span><h1 id="demo-space-name">Condomínio de testes</h1><p>Disponível até <strong id="demo-expiry"></strong></p></div><div class="button-row"><button id="demo-reload" type="button" class="btn btn-secondary btn-small">↻ Atualizar</button><button id="demo-leave" type="button" class="btn btn-ghost btn-small">Sair do teste</button></div></div>
+      <nav class="tabs demo-tabs" aria-label="Telas da demonstração">
+        <button type="button" data-demo-tab="overview" class="active">📊 Painel</button>
+        <button type="button" data-demo-tab="new">📷 Registrar</button>
+        <button type="button" data-demo-tab="history">🗂 Histórico</button>
+        <button type="button" data-demo-tab="past">🕓 Histórico antigo</button>
+      </nav>
+      <section id="demo-tab-overview" class="demo-tab">
+        <div id="demo-manager-stats">
+          <div class="summary-grid demo-stats">
+            <div class="summary-tile"><div class="metric-title">Medições de teste</div><div id="demo-count" class="metric">—</div></div>
+            <div class="summary-tile"><div class="metric-title">Última leitura</div><div id="demo-latest" class="metric">—</div></div>
+            <div class="summary-tile"><div class="metric-title">Consumo do último período</div><div id="demo-consumption" class="metric">—</div></div>
+          </div>
+          <div class="panel"><h2>Resumo automático (fictício)</h2><p id="demo-insight"></p><div id="demo-chart" class="chart"></div></div>
+        </div>
+        <div class="panel"><h2>📤 Relatório de demonstração</h2><p>Inclui aviso de dados fictícios. Você pode copiar/compartilhar um resumo ou imprimir a tela como PDF.</p><div class="demo-actions"><button id="demo-share" class="btn btn-primary" type="button">Compartilhar texto</button><button id="demo-print" class="btn btn-secondary" type="button">Imprimir / Salvar PDF</button></div></div>
+      </section>
+      <section id="demo-tab-new" class="demo-tab" hidden>
+        <div id="demo-worker-new" class="panel worker-quick"><h2>Olá, zelador(a)!</h2><p>Simule uma medição, como faria na portaria. Tudo aqui é fictício.</p></div>
+        <form id="demo-reading-form" class="panel narrow-form">
+          <h2>Registrar medição de demonstração</h2>
+          <div id="demo-reading-reference" class="notice notice-info"></div>
+          <label for="demo-reading-date">Data da leitura</label><input id="demo-reading-date" type="date" required>
+          <label>Foto (somente prévia local, não salva)</label>
+          <div class="photo-choices"><label class="btn btn-secondary photo-choice" for="demo-camera">📷 Tirar foto</label><input type="file" id="demo-camera" class="visually-hidden-file" accept="image/*" capture="environment"><label class="btn btn-ghost photo-choice" for="demo-gallery">🖼 Galeria</label><input type="file" id="demo-gallery" class="visually-hidden-file" accept="image/*"></div>
+          <img id="demo-photo-preview" class="demo-photo-preview" alt="Prévia local que não será salva" hidden><p class="help" id="demo-photo-message">Se escolher uma foto, ela ficará só neste dispositivo e será descartada ao sair desta tela de testes.</p>
+          <div class="meter-inputs"><div><label for="demo-whole">Parte inteira (m³)</label><input id="demo-whole" inputmode="numeric" placeholder="Ex.: 4800" required></div><div><label for="demo-decimals">Decimais</label><input id="demo-decimals" inputmode="numeric" maxlength="3" value="000" required></div></div>
+          <button class="btn btn-primary btn-block btn-xl" type="submit">Salvar medição fictícia</button>
+          <p class="help">Somente o número e a data serão compartilhados com os outros visitantes deste teste. Não use leituras reais.</p>
+        </form>
+      </section>
+      <section id="demo-tab-history" class="demo-tab" hidden>
+        <div class="panel"><h2>Histórico de demonstração</h2><p>Somente informações de teste. Fotos nunca ficam armazenadas neste ambiente.</p><button id="demo-export-csv" type="button" class="btn btn-secondary btn-small">↓ Exportar CSV fictício</button><div id="demo-readings"></div></div>
+        <div id="demo-worker-pending" class="notice notice-info"></div>
+      </section>
+      <section id="demo-tab-past" class="demo-tab" hidden>
+        <div id="demo-requests-panel" class="panel"><h2>Solicitações para aprovação</h2><p>Como síndico(a) de demonstração, você pode aprovar ou rejeitar lotes enviados pelo(a) zelador(a).</p><div id="demo-requests"></div></div>
+        <form id="demo-history-form" class="panel narrow-form"><h2>Adicionar histórico fictício</h2><p id="demo-history-instructions"></p><label for="demo-history-input">Data e leitura, uma por linha</label><textarea id="demo-history-input" rows="5" required placeholder="10/10/2025;3981,000
+17/10/2025;4064,959"></textarea><p class="help">Use datas anteriores a hoje e valores compatíveis com as medições de exemplo.</p><button id="demo-history-action" type="submit" class="btn btn-primary btn-block">Enviar teste</button></form>
+      </section>
+      <div class="panel demo-finish"><h2>Gostou de experimentar?</h2><p>Crie uma conta real para utilizar o HidroCondo de verdade. As medições fictícias não serão transferidas.</p><button id="demo-signup" type="button" class="btn btn-secondary">Criar minha conta / Voltar ao início</button></div>
+    </section>
+
+    <section id="screen-demo-ended" class="demo-splash" hidden>
+      <div class="demo-hero-warning"><div class="demo-giant-icon">⏰</div><div><h1>A demonstração terminou</h1><p>O prazo acabou ou o organizador encerrou este teste. As medições fictícias não serão migradas para uma conta real.</p></div></div>
+      <div class="panel"><h2>Quer continuar utilizando o HidroCondo?</h2><p>Para usar com medições reais, crie sua conta e solicite o acesso ao condomínio.</p><button id="demo-expired-signup" class="btn btn-primary btn-xl btn-block" type="button">Criar minha conta</button><button id="demo-expired-home" class="btn btn-ghost btn-block" type="button">Voltar ao início</button></div>
+    </section>
+
+    <section id="screen-demo-admin" class="onboard" hidden>
+      <div class="demo-admin-header"><div><span class="eyebrow">SUPORTE TÉCNICO AUTORIZADO</span><h1>🧪 Demonstrações por convite</h1><p>Gere dois links separados para teste de síndico(a) e zelador(a), sem necessidade de e-mail ou senha.</p></div><button id="demo-admin-back" class="btn btn-ghost" type="button">← Voltar</button></div>
+      <div class="demo-banner"><strong>⚠️ SOMENTE DADOS FICTÍCIOS</strong><span>Não envie links de produção. Não use dados reais de clientes. Os testes expiram e são descartáveis.</span></div>
+      <form id="demo-admin-form" class="panel narrow-form"><h2>Criar condomínio fictício</h2><label for="demo-admin-name">Nome de teste</label><input id="demo-admin-name" required minlength="3" maxlength="100" placeholder="Ex.: HidroCondo Demo 001"><div class="historical-quick-row"><div><label for="demo-admin-hours">Validade</label><select id="demo-admin-hours"><option value="24">24 horas</option><option value="72" selected>72 horas</option><option value="168">7 dias</option></select></div><div><label for="demo-admin-uses">Convidados por perfil</label><select id="demo-admin-uses"><option value="1" selected>1 pessoa</option><option value="3">3 pessoas</option><option value="5">5 pessoas</option></select></div></div><button type="submit" class="btn btn-primary btn-block btn-xl">Gerar os dois links</button><p class="help">Somente suporte autorizado pode criar. Cada convite possui limite de usos e expira automaticamente.</p></form>
+      <div id="demo-admin-new-links" class="panel" hidden><h2>✅ Convites criados</h2><p>Copie e guarde os links agora. Os tokens não podem ser recuperados posteriormente.</p><p>Válidos até: <strong id="demo-admin-expiry"></strong></p><label for="demo-manager-link">Link para síndico(a) de demonstração</label><div class="demo-link-row"><input id="demo-manager-link" readonly><button id="demo-copy-manager" type="button" class="btn btn-secondary">Copiar</button></div><label for="demo-worker-link">Link para zelador(a) de demonstração</label><div class="demo-link-row"><input id="demo-worker-link" readonly><button id="demo-copy-worker" type="button" class="btn btn-secondary">Copiar</button></div></div>
+      <div class="panel"><div class="panel-heading"><h2>Meus ambientes de demonstração</h2><button id="demo-admin-refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div><div id="demo-admin-list"></div></div>
+    </section>
+
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.6.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

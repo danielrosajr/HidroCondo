@@ -3,9 +3,11 @@ import {getWaterInsights} from './analysis.js';
 import {parseHistoricalText,previewHistorical} from './historical.js';
 import {mayCreateCondo,maySubmitHistory,mayApproveHistory} from './permissions.js';
 import {compressPhoto,formatPhotoBytes} from './photos.js';
+import {makeDemoController} from './demo.js';
 
 const $ = id => document.getElementById(id);
 const STORE = 'hidrocondo-fotos';
+let demoController=null;
 const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null,historyRequests:[],platformCreator:false,currentPhoto:null,historyPhotos:new Map()};
 const canCorrect = ()=>(state.role==='sindica'||state.role==='suporte')&&!state.previewWorker;
 const isManager = ()=>state.role==='sindica';
@@ -26,7 +28,7 @@ function cachedReport(row){
   return reportCache.get(key);
 }
 function toast(message,error=false){const el=$('toast');el.textContent=message;el.classList.toggle('error',error);el.classList.add('show');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>el.classList.remove('show'),5800);}
-function screens(which){for(const id of ['loading','setup','auth','profile','onboard','app']) $('screen-'+id).hidden=(id!==which);$('account-top').hidden=which!=='app';}
+function screens(which){for(const id of ['loading','setup','auth','profile','onboard','app','demo-welcome','demo','demo-ended','demo-admin']) $('screen-'+id).hidden=(id!==which);$('account-top').hidden=which!=='app';}
 function setBusy(button,busy,text){button.disabled=busy;if(busy){button.dataset.orig=button.textContent;button.textContent=text||'Aguarde...';}else if(button.dataset.orig){button.textContent=button.dataset.orig;delete button.dataset.orig;}}
 function guard(fn){return async e=>{try{await fn(e);}catch(err){console.error(err);toast(apiError(err),true);}};}
 function makeUUID(){return crypto.randomUUID();}
@@ -44,11 +46,14 @@ async function bootstrap(){
   if(error && !/session missing/i.test(error.message))console.warn('Sessão:',error.message);
   state.user=user;
   if(!user){state.member=null;state.profile=null;return screens('auth');}
+  if(user.is_anonymous){await state.db.auth.signOut();state.user=null;return screens('auth');}
   const {data:profile,error:pe}=await state.db.from('account_profiles')
     .select('account_type,can_create_condominiums').eq('user_id',user.id).maybeSingle();
   if(pe)throw Error('Atualize o banco: execute sql/upgrade_0_2_0.sql no Supabase. '+pe.message);
   state.profile=profile?.account_type||null;
   state.platformCreator=Boolean(profile?.can_create_condominiums);
+  $('demos-button').hidden=!(state.profile==='suporte'&&state.platformCreator);
+  $('demo-onboard-entry').hidden=!(state.profile==='suporte'&&state.platformCreator);
   if(!state.profile){state.role=null;return screens('profile');}
   const {data:members,error:e}=await state.db.from('memberships')
     .select('condominium_id,role,condominiums(id,name)')
@@ -757,8 +762,13 @@ async function init(){
   const cfg=window.HIDRO_CONFIG;
   if(!cfg?.supabaseUrl?.startsWith('https://')||!cfg?.supabaseKey||cfg.supabaseUrl.includes('SEU-PROJETO')||cfg.supabaseKey.includes('SUA_CHAVE')||!window.supabase){screens('setup');return;}
   state.db=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true}});
-  state.db.auth.onAuthStateChange((_event,_session)=>{setTimeout(()=>bootstrap().catch(err=>{toast(apiError(err),true);screens('auth');}),0);});
-  await bootstrap();
+  demoController=makeDemoController({db:state.db,screens,toast,homeUrl,goHome:async()=>{state.pickerOpen=true;await bootstrap();},startSignup:()=>changeAuthMode('signup')});
+  demoController.init();
+  state.db.auth.onAuthStateChange((_event,_session)=>{
+    if(new URLSearchParams(location.search).has('demo'))return; // Demo login is intentionally handled only inside its isolated UI.
+    setTimeout(()=>bootstrap().catch(err=>{toast(apiError(err),true);screens('auth');}),0);
+  });
+  if(new URLSearchParams(location.search).has('demo'))demoController.welcome();else await bootstrap();
 }
 function bindEvents(){
   $('auth-mode-login').addEventListener('click',()=>changeAuthMode('login'));
@@ -779,6 +789,8 @@ function bindEvents(){
       }
     }finally{setBusy(btn,false);}
   }));
+  $('demos-button').addEventListener('click',guard(async()=>{if(!demoController)throw Error('Demonstrações indisponíveis.');await demoController.showAdmin();}));
+  $('demo-onboard-button').addEventListener('click',guard(async()=>{if(!demoController)throw Error('Demonstrações indisponíveis.');await demoController.showAdmin();}));
   $('legacy-profile-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const role=document.querySelector('input[name="legacy-role"]:checked').value;
     const {error}=await state.db.rpc('hc_choose_profile',{p_role:role});if(error)throw error;await bootstrap();
@@ -923,6 +935,10 @@ function applyTheme(theme){
 }
 function cycleTheme(){applyTheme(state.theme==='auto'?'dark':state.theme==='dark'?'light':'auto');}
 function showTutorial(){
+  if(new URLSearchParams(location.search).has('demo')){
+    $('tutorial-body').innerHTML='<ol><li>Este é um teste. Todos os dados iniciais são fictícios.</li><li>Você pode registrar novas leituras de teste e conferir o histórico e os gráficos.</li><li>Fotos só aparecem como prévia no dispositivo. Não são salvas no servidor.</li><li>O zelador pode enviar histórico fictício para aprovação pelo(a) síndico(a).</li><li>O prazo é limitado. Se sair ou limpar o navegador, poderá perder acesso e dados de teste.</li><li>Para usar de verdade, crie sua conta e configure um condomínio real.</li></ol>';
+    if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();return;
+  }
   const worker=viewWorker()||(state.profile==='zelador'&&!state.role);
   const support=state.profile==='suporte';
   const lines=worker?[
@@ -939,6 +955,7 @@ function showTutorial(){
     'Abra o link usando sua conta técnica autorizada e ative a sessão.',
     'Consulte o painel e corrija medições com motivo documentado.',
     'O acesso termina em até 90 minutos ou antes, caso seja revogado.',
+    'Se sua conta estiver autorizada para criar condomínios, use Demonstrações para gerar links de teste fictícios sem exigir cadastro.',
     'Use Condomínios para trocar entre sessões autorizadas. Ver como zelador(a) mostra uma prévia sem salvar dados.'
   ]:[
     'Crie seu condomínio ao entrar pela primeira vez.',
@@ -955,12 +972,12 @@ function showTutorial(){
   if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
 }
 function showTutorialOnce(){
-  const key=`hc_tutorial_v050_${state.role}`;
+  const key=`hc_tutorial_v060_${state.role}`;
   if(!localStorage.getItem(key)){localStorage.setItem(key,'1');showTutorial();}
 }
 applyTheme(localStorage.getItem('hidrocondo_theme')||'auto');
 if(new URLSearchParams(location.search).has('suporte'))$('auth-mode-signup').hidden=true;
 bindEvents();init().catch(err=>{console.error(err);toast(`Erro ao iniciar: ${apiError(err)}`,true);screens('setup');});
 // Atualização automática do painel sem usar chaves privilegiadas e sem refresh da página.
-setInterval(()=>{if(!document.hidden&&state.user&&state.condo&&!state.busy)loadData().catch(console.warn);},30000);
-window.addEventListener('focus',()=>{if(state.user&&state.condo)loadData().catch(console.warn);});
+setInterval(()=>{if(!document.hidden&&!new URLSearchParams(location.search).has('demo')&&state.user&&state.condo&&!state.busy)loadData().catch(console.warn);},30000);
+window.addEventListener('focus',()=>{if(!new URLSearchParams(location.search).has('demo')&&state.user&&state.condo)loadData().catch(console.warn);});

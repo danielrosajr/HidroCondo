@@ -1,111 +1,95 @@
-# HidroCondo — MVP 0.1.0
+# HidroCondo v0.2.0 — Perfis, compartilhamento e suporte
 
-PWA estático para registrar medições de hidrômetros, armazenar fotos privadas, calcular consumo entre datas, gerar relatório PNG/WhatsApp e exibir painel online para a síndica. Interface em português, com dois papéis: **síndica** e **zelador**.
+Aplicativo estático PWA + Supabase para zelador(a) registrar hidrômetros com foto e síndico(a) consultar painel, histórico e gráficos. **Não é necessário criar um projeto Supabase novo.**
 
-## Funcionalidades implementadas
+## Para quem JÁ instalou a v0.1.0 (seu caso)
 
-- Cadastro de usuário com e-mail e senha e autenticação Supabase.
-- A síndica cria o condomínio; um código de convite com 24 caracteres permite ao zelador participar.
-- A síndica cadastra mais hidrômetros; o app já começa com um padrão.
-- Entrada de leitura **separada em parte inteira e três casas decimais**: `4.064` e `959` = `4.064,959 m³`.
-- Foto obrigatória para o zelador (WebP comprimido); a síndica pode cadastrar a primeira leitura sem foto para registrar a referência histórica.
-- **OCR experimental opcional** para tentar preencher os dígitos a partir da foto, executado no navegador com Tesseract.js. É obrigatório conferir o valor sugerido; falhas de leitura são esperadas.
-- Não permite datas futuras, leituras duplicadas no mesmo dia ou retrocesso do marcador (a validação presume hidrômetro sem troca/zeragem).
-- Cálculos históricos automáticos com base na medição anterior, média diária e alerta de aumento de consumo com pelo menos quatro intervalos.
-- Gráfico dos últimos nove períodos, histórico, visualização privada das fotos e CSV de exportação.
-- Relatório PNG com foto, consumo e média; botão de compartilhamento nativo (escolha WhatsApp na tela de compartilhamento). Alternativa: baixar o PNG e abrir WhatsApp com texto pronto.
-- Correção de leituras somente pela síndica, com motivo e log de auditoria.
-- Painel online atualizado automaticamente a cada 30 segundos, quando a página estiver aberta, ou ao voltar ao app.
-- PWA instalável no celular; **internet necessária para cadastrar/consultar medições**. Não há sincronização offline no MVP.
+**Faça backup das tabelas e fotos antes de migrar**, de preferência experimente a migração numa cópia do projeto. Esta versão contém alteração nas permissões RLS e funções do banco.
 
-## Instalação: cerca de 15–25 minutos
+1. No Supabase atual, abra **SQL Editor → New query** e execute **`sql/upgrade_0_2_0.sql`**. **NÃO execute `sql/setup.sql` novamente.**
+2. No GitHub, branch **`main`**, substitua os arquivos da raiz: `index.html`, `app.js`, `styles.css`, `sw.js`, `package.json`, `README.md` e **adicione** `analysis.js`, `tests/analysis.test.js`, `sql/upgrade_0_2_0.sql`.
+3. Preserve **`config.js` existente**, com a URL do Supabase e a **publishable key**. **Não substitua** pelo modelo do ZIP nem publique chaves `service_role`, `sb_secret` ou senhas. Os arquivos `math.js`, ícones e `manifest.webmanifest` continuam os mesmos.
+4. No GitHub Pages, espere a publicação de `main`. Caso fique mostrando uma versão antiga, recarregue a página e feche/reabra o app instalado (service worker agora tem cache `v0.2.0`).
+5. Teste primeiro com **contas de teste** e um condomínio de teste: cadastro de síndico(a), criação de condomínio, link de zelador(a) de uso único, foto/leitura e relatório, além de correção com auditoria.
+6. Se contas antigas já tinham um condomínio, a migração preserva seu perfil com base no vínculo: `sindica` → `sindico`; `zelador` → `zelador`. Contas antigas sem vínculo escolhem seu perfil uma única vez ao entrar.
 
-### 1. Criar o banco
+> Esta entrega contém o código e a migração; **nenhum arquivo foi automaticamente enviado ao seu GitHub nem aplicado no Supabase**. Nenhuma integração foi testada em seu banco real.
 
-1. Crie um projeto em https://supabase.com (conta gratuita é suficiente para iniciar testes dentro da franquia disponível).
-2. No menu **SQL Editor**, abra `sql/setup.sql`, cole todo o conteúdo e execute **uma única vez** num projeto novo.
-3. Em **Authentication → Providers → Email**, mantenha o provedor de e-mail habilitado. Para uso real, é recomendado confirmar e-mails. Depois de se cadastrar, clique no link recebido antes de fazer login.
-4. Em **Authentication → URL Configuration**, cadastre a URL completa do GitHub Pages na lista de redirecionamentos quando necessário.
+## Instalação em um Supabase inteiramente novo
 
-### 2. Configurar o site
+Execute primeiro `sql/setup.sql` do projeto original e, em seguida, `sql/upgrade_0_2_0.sql`. A versão 0.2.0 exige as duas estruturas. Não aplique `setup.sql` novamente num banco já utilizado.
 
-1. Abra o arquivo `config.js` na raiz do projeto (já vem como modelo).
-2. Em **Project Settings → API** (a interface pode variar), copie a **Project URL** e a chave **publishable** (`sb_publishable_...`) ou a chave **anon**.
-3. Insira os dois valores em `config.js`. **Não use `service_role`, `sb_secret_...` nem senha do banco.** A chave pública fica visível no GitHub Pages; isso é esperado, e as tabelas são protegidas por RLS.
-4. Envie os arquivos para um repositório GitHub. Em **Settings → Pages**, publique a raiz da branch principal.
-5. Abra a URL da página. Em Android/iOS, abra pelo navegador e use *Adicionar à tela de início* para instalar quando disponível.
+## O que mudou
 
-### 3. Primeira utilização
+- **Modo claro, escuro e automático**, lembrado pelo navegador.
+- **Perfil no cadastro**: síndico(a) ou zelador(a). Cada perfil vê o fluxo apropriado. Uma conta do tipo zelador(a) não pode criar condomínio, inclusive quando tenta chamar diretamente a API: a política de banco rejeita essa operação.
+- **Ativação do zelador via URL pessoal**: síndico(a) gera um link válido por 7 dias e **um único uso**. O(a) zelador(a) abre o link, entra/cria conta do seu perfil e confirma a ativação. Convites antigos de código permanente da v0.1.0 deixam de funcionar, por segurança.
+- **Simplicidade para zelador(a)**: abre na tela de medição, esconde painel administrativo, facilita foto/valor/salvar e oferece botão de compartilhar na confirmação.
+- **Relatório com foto**: PNG único com leitura, consumo e resumo dos dados. No WhatsApp, se o dispositivo suportar Web Share com arquivos, use a folha de compartilhamento. Alguns WhatsApps/navegadores **ignoram o texto separado** quando recebem uma imagem; por isso, as principais informações vão impressas no próprio PNG. Quando compartilhar imagem não for suportado, o aplicativo baixa o PNG e abre WhatsApp com texto; **é necessário anexar a imagem manualmente**.
+- **Métricas em linguagem natural**: último período, média diária, últimas 4 medições e períodos encerrados no mês. Nunca afirmar consumo **total de um mês incompleto**; “mês” apresenta apenas o que está efetivamente coberto por intervalos encerrados. Alerta apenas com histórico suficiente, nunca diagnóstico de vazamento.
+- **Tutorial integrado**: automático no primeiro acesso a cada papel; sempre disponível em `? Ajuda`. **Manutenção obrigatória**: atualizar tutorial da interface e este README sempre que alterar os fluxos.
+- **Suporte temporário autorizado por síndico(a)**: link de autorização tem 15 minutos para ser usado uma vez; concede 90 minutos de acesso a **conta técnica especial do tipo `suporte`**. O(a) síndico(a) pode revogar a sessão no painel. Permite ler dados/fotos e corrigir leituras com registro de motivo; não permite acessar livremente outros condomínios. Sem um link de autorização, conta técnica não lê dados. Conta `suporte` é configurada **manualmente pelo proprietário do Supabase** (veja abaixo).
 
-1. A **síndica** cria uma conta, faz login e escolhe **Sou síndica / administrador**. Informe o nome do condomínio.
-2. Em **Ajustes**, copie o código de convite e envie em particular ao zelador.
-3. Se houver histórico, a síndica cadastra a **leitura de referência** (ex.: 10/10/2026: inteiro `3981`, decimais `000`) sem foto. **Se não houver certeza dos decimais antigos, informe 000 apenas como aproximação e explique isso ao consultar os valores.**
-4. O **zelador** cria outra conta, entra em **Sou zelador / responsável**, cola o código e confirma.
-5. O zelador registra a próxima leitura com foto, opcionalmente tenta **Reconhecer números (beta)**, confere o resultado e salva. Ela aparece no painel da síndica ao atualizar/voltar à página ou no próximo ciclo de 30 s.
-6. Clique em **Compartilhar relatório** e escolha WhatsApp. Dependendo do navegador, talvez seja necessário baixar a imagem e anexá-la manualmente.
+## Criar conta técnica de suporte (somente administrador do banco)
 
-## Como funcionam as medidas
+Por segurança, **ninguém pode escolher “sou suporte” na tela de cadastro**. Você precisa criar uma conta separada de suporte:
 
-O visor da imagem fornecida possui dígitos como `4064.959 m³`; a linha de `m³/h` indica vazão instantânea, **não** a leitura acumulada.
+1. Crie uma conta normal usando outro e-mail; pode escolher `zelador(a)`, **sem entrar em condomínio**.
+2. No SQL Editor do Supabase, depois de confirmar que o e-mail realmente é seu, rode, substituindo o e-mail:
 
-- Leitura: 10/10/2026 = `3981,000 m³`; 17/10/2026 = `4064,959 m³`.
-- Diferença: **83,959 m³** (83.959 litros) — atenção: os decimais da primeira medição são hipotéticos neste exemplo.
-- Se forem registrados apenas os números inteiros `3981,000` e `4064,000`, a diferença é **83 m³**.
-- Armazene números reais com três casas decimais para evitar que diferenças e médias mudem por truncamento.
+```sql
+update public.account_profiles
+set account_type = 'suporte'
+where user_id = (
+  select id from auth.users where email = 'SEU-EMAIL-DE-SUPORTE@example.com'
+);
+```
 
-## Limitações importantes do MVP
+3. Faça logout e login com essa conta. Sem autorização de uma síndico(a), ela **não** verá dados do condomínio. O(a) síndico(a) gera o link em **Ajustes → Autorizar suporte**, e você o abre nessa conta. Cada autorização vale no máximo 90 minutos; o acesso é apenas ao condomínio escolhido.
+4. Para encerrar antes do prazo, o(a) síndico(a) clica em **Revogar agora**. Uma sessão revogada pode continuar exibindo dados já carregados na tela até ser atualizada, mas novas solicitações ficam bloqueadas pelas políticas de acesso no banco.
 
-- **OCR experimental, não validado com fotos de campo.** Pode falhar por reflexos, baixa resolução ou confundir dígitos. Não substitui conferência manual; carregamento inicial do OCR precisa de internet.
-- A atualização é por consulta automática a cada 30 s, **não é push instantâneo**.
-- O envio para WhatsApp **não acontece sozinho**, pois o usuário deve confirmar o compartilhamento. Há diferenças entre Android, iOS e desktop.
-- Não há cobrança, leitura automática por API do hidrômetro, lembrete por push, relatórios PDF, sincronização offline nem cálculo de conta de água.
-- O app carrega até **1.500** leituras e 1.500 itens de auditoria por condomínio. Para grandes volumes será necessária paginação.
-- Não resolve automaticamente troca de hidrômetro, reset do contador ou leitura circular. Cadastre um novo hidrômetro quando houver substituição e mantenha o histórico anterior.
-- **Não apaga leituras** por segurança. A síndica pode corrigir com registro de auditoria. Os uploads que não virarem registro após falhas muito específicas podem exigir limpeza manual no Storage.
-- Dependências de Supabase JS são carregadas de CDN. Sem internet o app pode abrir parcialmente se já instalado, mas **não** grava leituras offline.
-- **Backup:** exporte CSV regularmente. O CSV não contém os próprios arquivos de foto; faça também backup do Storage se for necessário preservar as imagens fora do serviço.
-- O plano gratuito Supabase tem limites, regras de pausa e pode ser alterado. Verifique o preço e as condições atuais antes de depender dele operacionalmente.
-- Para operação profissional: revisar política de privacidade, procedimentos de acesso, recuperação de contas, política de backups, testes de dispositivos e retenção de imagens.
+**Restrição importante:** a função de suporte é para consultas, correções documentadas e inspeção. Não é uma conta de superadmin geral, não pode alterar credenciais de outros usuários, assumir outro condomínio, mudar permissões ou apagar históricos. Para mudanças de esquema, use o Supabase SQL Editor, com procedimento administrativo separado.
 
-## Estrutura do repositório
+## Fluxo de teste mínimo
+
+1. No navegador incógnito A, crie uma conta nova `Sou síndico(a)`, confirme e-mail e crie um condomínio.
+2. Em Ajustes, clique em **Gerar link de ativação** e copie-o.
+3. No navegador incógnito B, abra o link e crie conta `Sou zelador(a)` (o perfil de zelador já estará pré-selecionado). Ao entrar, clique em **Ativar meu acesso**.
+4. Cadastre uma leitura com foto. A foto é obrigatória para zelador(a), mas a primeira leitura de referência pode ser criada pelo(a) síndico(a) sem foto.
+5. Com dois registros no mesmo hidrômetro, compare o valor de consumo e gere a imagem de relatório; teste no Android e no WhatsApp real.
+6. Confira que zelador(a) não consegue criar condomínio nem editar leituras, inclusive se tentar acessar as APIs sem botão.
+7. Gere uma sessão de suporte, ative-a com conta técnica, corrija leitura com justificativa e revogue. Acesso deve ser negado na API depois da revogação.
+8. Alterne o tema e abra `? Ajuda` nos dois perfis.
+
+## Cálculos e limites
+
+O visor `4.064,959 m³` corresponde à leitura acumulada. **A linha `m³/h` é a vazão instantânea**, não é o consumo acumulado. O cálculo entre `3.981,000` e `4.064,959` é `83,959 m³` (se os três decimais da leitura anterior eram efetivamente 000). Médias consideram intervalo em dias. A comparação histórica é indicativa e não identifica vazamentos.
+
+O compartilhamento nativo depende do navegador/OS e pode não aceitar `text` junto com `files`; aplicativos não podem impor que o WhatsApp anexe uma imagem e uma legenda automaticamente em todos os aparelhos.
+
+**Limitações restantes:** a internet é necessária para salvar; OCR permanece experimental e precisa de confirmação; não há notificações automáticas; dados de leitura com reset/troca de hidrômetro exigem novo dispositivo; backup CSV não inclui fotos. Proteja os links de convite, pois são credenciais temporárias.
+
+## Arquivos atualizados
 
 ```text
-HidroCondo-MVP/
-├── index.html              # Telas de cadastro, painel, leituras e histórico
-├── styles.css              # Layout responsivo
-├── app.js                  # Integração Supabase e interface
-├── math.js                 # Cálculos e formatos de leitura
-├── config.example.js       # Modelo de configuração pública
-├── config.js               # Sua configuração (criar localmente)
-├── manifest.webmanifest    # Instalabilidade PWA
-├── sw.js                   # Cache do shell, sem dados privados
-├── icons/icon.svg          # Ícone
-├── sql/setup.sql           # Banco + políticas de acesso
-├── tests/math.test.js      # Testes
-└── package.json
+index.html              substitui (fluxos, ajuda e autenticação)
+app.js                  substitui (perfis, compartilhamento e suporte)
+styles.css              substitui (dark mode e simplificações)
+analysis.js             NOVO (texto analítico, métricas)
+sw.js                   substitui (cache 0.2.0)
+package.json            substitui (versão)
+README.md               substitui (guia atualizado)
+sql/upgrade_0_2_0.sql   NOVO (migração do banco EXISTENTE)
+tests/analysis.test.js  NOVO (testes de análises)
+config.js               PRESERVAR, não alterar
+math.js                 PRESERVAR
 ```
 
-## Desenvolvimento local e testes
+## Versão GitHub
 
-```bash
-# edite config.js com a URL e a chave pública
-npm test
-python3 -m http.server 8080
-# abra http://localhost:8080
-```
+- Release: `v0.2.0-beta` (**pre-release**, enquanto não testada em campo).
+- Commit: `feat: adicionar perfis seguros, dark mode, convites e suporte temporário`
+- Arquivos removidos: nenhum.
+- Nunca reaplicar `sql/setup.sql` na base que já possui os dados.
 
-## GitHub
-
-- **Adicionar:** todos os arquivos listados acima, incluindo `config.js` com **somente chave publicável**, nunca chave secreta.
-- **Remover/substituir:** nada; criação inicial do projeto.
-- **Versão / release:** `v0.1.0-mvp`.
-- **Mensagem de commit:** `feat: criar MVP HidroCondo com leituras, fotos, painel e WhatsApp`.
-
-## Referências técnicas
-
-- https://supabase.com/docs/reference/javascript/installing
-- https://supabase.com/docs/guides/storage/security/access-control
-- https://supabase.com/docs/guides/storage/buckets/fundamentals
-- https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share
-
-- https://github.com/naptha/tesseract.js/
+Para rodar os testes locais: `npm test`. **Testes automáticos de banco/RLS, suporte em Supabase real e compartilhamento nativo ainda pendentes**.

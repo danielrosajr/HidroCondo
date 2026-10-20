@@ -1,95 +1,97 @@
-# HidroCondo v0.2.0 — Perfis, compartilhamento e suporte
+# HidroCondo v0.3.0-beta
 
-Aplicativo estático PWA + Supabase para zelador(a) registrar hidrômetros com foto e síndico(a) consultar painel, histórico e gráficos. **Não é necessário criar um projeto Supabase novo.**
+HidroCondo is a Portuguese-language, mobile-first PWA for recording condominium water-meter readings. Stack: static HTML/CSS/ES modules on GitHub Pages, Supabase Auth/Postgres/Storage with RLS, plus client-side PDF reporting.
 
-## Para quem JÁ instalou a v0.1.0 (seu caso)
+## Upgrade from v0.2.0-beta (existing installations)
 
-**Faça backup das tabelas e fotos antes de migrar**, de preferência experimente a migração numa cópia do projeto. Esta versão contém alteração nas permissões RLS e funções do banco.
+**Back up your Supabase data and private Storage photos first. Prefer testing this migration in a disposable Supabase project before production. Do NOT re-run `sql/setup.sql`.**
 
-1. No Supabase atual, abra **SQL Editor → New query** e execute **`sql/upgrade_0_2_0.sql`**. **NÃO execute `sql/setup.sql` novamente.**
-2. No GitHub, branch **`main`**, substitua os arquivos da raiz: `index.html`, `app.js`, `styles.css`, `sw.js`, `package.json`, `README.md` e **adicione** `analysis.js`, `tests/analysis.test.js`, `sql/upgrade_0_2_0.sql`.
-3. Preserve **`config.js` existente**, com a URL do Supabase e a **publishable key**. **Não substitua** pelo modelo do ZIP nem publique chaves `service_role`, `sb_secret` ou senhas. Os arquivos `math.js`, ícones e `manifest.webmanifest` continuam os mesmos.
-4. No GitHub Pages, espere a publicação de `main`. Caso fique mostrando uma versão antiga, recarregue a página e feche/reabra o app instalado (service worker agora tem cache `v0.2.0`).
-5. Teste primeiro com **contas de teste** e um condomínio de teste: cadastro de síndico(a), criação de condomínio, link de zelador(a) de uso único, foto/leitura e relatório, além de correção com auditoria.
-6. Se contas antigas já tinham um condomínio, a migração preserva seu perfil com base no vínculo: `sindica` → `sindico`; `zelador` → `zelador`. Contas antigas sem vínculo escolhem seu perfil uma única vez ao entrar.
+1. Supabase → **SQL Editor → New query** → run **`sql/upgrade_0_3_0.sql`**. This migration preserves existing readings and memberships; it removes the single-condominium-per-user constraint, relaxes the manager creation rule, enables historical imports without photos, and validates monotonic readings inside Postgres.
+2. Update the deployed files listed below on the GitHub Pages publishing branch (usually `main`). **Preserve your existing `config.js`** with only the Supabase URL and *publishable/anon* key. Do not add service-role or secret keys to GitHub.
+3. Wait for GitHub Pages to deploy, then reload the PWA. The service-worker cache version is `v0.3.0`.
+4. Test with disposable accounts/condominiums before importing the actual previous year of readings.
 
-> Esta entrega contém o código e a migração; **nenhum arquivo foi automaticamente enviado ao seu GitHub nem aplicado no Supabase**. Nenhuma integração foi testada em seu banco real.
+**If you still run v0.1.0**, execute `sql/upgrade_0_2_0.sql` before `sql/upgrade_0_3_0.sql`. For new installations, run `sql/setup.sql`, then the 0.2.0 migration, then the 0.3.0 migration, in that order. Do not execute `setup.sql` on an established project.
 
-## Instalação em um Supabase inteiramente novo
+## Functional changes
 
-Execute primeiro `sql/setup.sql` do projeto original e, em seguida, `sql/upgrade_0_2_0.sql`. A versão 0.2.0 exige as duas estruturas. Não aplique `setup.sql` novamente num banco já utilizado.
+### Multiple condominiums under one account
 
-## O que mudou
+- Each account can be a member of multiple condominiums (`memberships` primary key remains `(condominium_id, user_id)`). Manager accounts may create more than one condominium, and worker accounts may redeem an invitation to an additional condominium.
+- Use **Condomínios** at the top (or **Ajustes → Trocar de condomínio**) to return to the workspace selector; this does **not** revoke membership or log out. The active workspace is saved *locally, per logged-in user*; it is not a backend permission switch.
+- All meter, readings, photos, invitations, support grants, and reports remain scoped by `condominium_id`; Supabase RLS enforces membership. Managers can manage multiple spaces with one email; workers can join multiple via separate invite links.
+- A user’s **account type** remains fixed (`sindico`, `zelador`, `suporte`). This release supports multiple condominiums **within that type**, not being a manager in one and a worker in another on the same account. Mixed roles would require a separate future permissions redesign.
 
-- **Modo claro, escuro e automático**, lembrado pelo navegador.
-- **Perfil no cadastro**: síndico(a) ou zelador(a). Cada perfil vê o fluxo apropriado. Uma conta do tipo zelador(a) não pode criar condomínio, inclusive quando tenta chamar diretamente a API: a política de banco rejeita essa operação.
-- **Ativação do zelador via URL pessoal**: síndico(a) gera um link válido por 7 dias e **um único uso**. O(a) zelador(a) abre o link, entra/cria conta do seu perfil e confirma a ativação. Convites antigos de código permanente da v0.1.0 deixam de funcionar, por segurança.
-- **Simplicidade para zelador(a)**: abre na tela de medição, esconde painel administrativo, facilita foto/valor/salvar e oferece botão de compartilhar na confirmação.
-- **Relatório com foto**: PNG único com leitura, consumo e resumo dos dados. No WhatsApp, se o dispositivo suportar Web Share com arquivos, use a folha de compartilhamento. Alguns WhatsApps/navegadores **ignoram o texto separado** quando recebem uma imagem; por isso, as principais informações vão impressas no próprio PNG. Quando compartilhar imagem não for suportado, o aplicativo baixa o PNG e abre WhatsApp com texto; **é necessário anexar a imagem manualmente**.
-- **Métricas em linguagem natural**: último período, média diária, últimas 4 medições e períodos encerrados no mês. Nunca afirmar consumo **total de um mês incompleto**; “mês” apresenta apenas o que está efetivamente coberto por intervalos encerrados. Alerta apenas com histórico suficiente, nunca diagnóstico de vazamento.
-- **Tutorial integrado**: automático no primeiro acesso a cada papel; sempre disponível em `? Ajuda`. **Manutenção obrigatória**: atualizar tutorial da interface e este README sempre que alterar os fluxos.
-- **Suporte temporário autorizado por síndico(a)**: link de autorização tem 15 minutos para ser usado uma vez; concede 90 minutos de acesso a **conta técnica especial do tipo `suporte`**. O(a) síndico(a) pode revogar a sessão no painel. Permite ler dados/fotos e corrigir leituras com registro de motivo; não permite acessar livremente outros condomínios. Sem um link de autorização, conta técnica não lê dados. Conta `suporte` é configurada **manualmente pelo proprietário do Supabase** (veja abaixo).
+### Removed OCR
 
-## Criar conta técnica de suporte (somente administrador do banco)
+- All OCR/Tesseract UI, scripts, helper parsing and tests have been removed. Users enter the accumulated meter reading manually and confirm it. Do not use the instantaneous flow reading (`m³/h`).
 
-Por segurança, **ninguém pode escolher “sou suporte” na tela de cadastro**. Você precisa criar uma conta separada de suporte:
+### Worker-view preview
 
-1. Crie uma conta normal usando outro e-mail; pode escolher `zelador(a)`, **sem entrar em condomínio**.
-2. No SQL Editor do Supabase, depois de confirmar que o e-mail realmente é seu, rode, substituindo o e-mail:
+- **Ver como zelador(a)** is visible to managers and temporary support users. It temporarily hides manager tabs and presents the worker’s tabs/recording flow; **it is a read-only preview**: fields on the recording form are disabled and no permission is changed.
+- **Voltar à administração** restores the previous management view. Support user previews remain subject to their authorization expiry.
 
-```sql
-update public.account_profiles
-set account_type = 'suporte'
-where user_id = (
-  select id from auth.users where email = 'SEU-EMAIL-DE-SUPORTE@example.com'
-);
-```
+### Historical import
 
-3. Faça logout e login com essa conta. Sem autorização de uma síndico(a), ela **não** verá dados do condomínio. O(a) síndico(a) gera o link em **Ajustes → Autorizar suporte**, e você o abre nessa conta. Cada autorização vale no máximo 90 minutos; o acesso é apenas ao condomínio escolhido.
-4. Para encerrar antes do prazo, o(a) síndico(a) clica em **Revogar agora**. Uma sessão revogada pode continuar exibindo dados já carregados na tela até ser atualizada, mas novas solicitações ficam bloqueadas pelas políticas de acesso no banco.
-
-**Restrição importante:** a função de suporte é para consultas, correções documentadas e inspeção. Não é uma conta de superadmin geral, não pode alterar credenciais de outros usuários, assumir outro condomínio, mudar permissões ou apagar históricos. Para mudanças de esquema, use o Supabase SQL Editor, com procedimento administrativo separado.
-
-## Fluxo de teste mínimo
-
-1. No navegador incógnito A, crie uma conta nova `Sou síndico(a)`, confirme e-mail e crie um condomínio.
-2. Em Ajustes, clique em **Gerar link de ativação** e copie-o.
-3. No navegador incógnito B, abra o link e crie conta `Sou zelador(a)` (o perfil de zelador já estará pré-selecionado). Ao entrar, clique em **Ativar meu acesso**.
-4. Cadastre uma leitura com foto. A foto é obrigatória para zelador(a), mas a primeira leitura de referência pode ser criada pelo(a) síndico(a) sem foto.
-5. Com dois registros no mesmo hidrômetro, compare o valor de consumo e gere a imagem de relatório; teste no Android e no WhatsApp real.
-6. Confira que zelador(a) não consegue criar condomínio nem editar leituras, inclusive se tentar acessar as APIs sem botão.
-7. Gere uma sessão de suporte, ative-a com conta técnica, corrija leitura com justificativa e revogue. Acesso deve ser negado na API depois da revogação.
-8. Alterne o tema e abra `? Ajuda` nos dois perfis.
-
-## Cálculos e limites
-
-O visor `4.064,959 m³` corresponde à leitura acumulada. **A linha `m³/h` é a vazão instantânea**, não é o consumo acumulado. O cálculo entre `3.981,000` e `4.064,959` é `83,959 m³` (se os três decimais da leitura anterior eram efetivamente 000). Médias consideram intervalo em dias. A comparação histórica é indicativa e não identifica vazamentos.
-
-O compartilhamento nativo depende do navegador/OS e pode não aceitar `text` junto com `files`; aplicativos não podem impor que o WhatsApp anexe uma imagem e uma legenda automaticamente em todos os aparelhos.
-
-**Limitações restantes:** a internet é necessária para salvar; OCR permanece experimental e precisa de confirmação; não há notificações automáticas; dados de leitura com reset/troca de hidrômetro exigem novo dispositivo; backup CSV não inclui fotos. Proteja os links de convite, pois são credenciais temporárias.
-
-## Arquivos atualizados
+- **Histórico antigo** supports a quick-add form (**date + reading → Add**) or bulk paste of *one date and reading per line*, without photos, for dates strictly before today:
 
 ```text
-index.html              substitui (fluxos, ajuda e autenticação)
-app.js                  substitui (perfis, compartilhamento e suporte)
-styles.css              substitui (dark mode e simplificações)
-analysis.js             NOVO (texto analítico, métricas)
-sw.js                   substitui (cache 0.2.0)
-package.json            substitui (versão)
-README.md               substitui (guia atualizado)
-sql/upgrade_0_2_0.sql   NOVO (migração do banco EXISTENTE)
-tests/analysis.test.js  NOVO (testes de análises)
-config.js               PRESERVAR, não alterar
-math.js                 PRESERVAR
+10/10/2025;3981,000
+17/10/2025;4.064,959
+24/10/2025;4.146,100
 ```
 
-## Versão GitHub
+- Accepts `DD/MM/YYYY` or `YYYY-MM-DD`, semicolon, and Brazilian numeric format. Decimal separator is a comma; dots are thousand separators. It is limited to **250 readings per submission** (use more batches if needed).
+- Preview the count, dates, sample values, and total difference **before** saving. Confirm to insert the batch in one atomic request. Each imported row is marked `entry_kind='historical'` and `photo_path=NULL`, clearly identified in history and PDF.
+- Prevalidation prevents duplicate dates, future/today dates without photos, and decreases in the cumulative meter value relative to any existing previous or subsequent measurement. An additional Postgres trigger validates order on insertion/update (including direct API calls) and serializes concurrent changes per meter.
+- Equal consecutive readings are allowed (zero consumption). **Real meter replacement/reset/rollover is not supported within the same meter history**: create a new meter record instead. Do not fabricate values to force a monotonic sequence.
 
-- Release: `v0.2.0-beta` (**pre-release**, enquanto não testada em campo).
-- Commit: `feat: adicionar perfis seguros, dark mode, convites e suporte temporário`
-- Arquivos removidos: nenhum.
-- Nunca reaplicar `sql/setup.sql` na base que já possui os dados.
+### Full PDF export
 
-Para rodar os testes locais: `npm test`. **Testes automáticos de banco/RLS, suporte em Supabase real e compartilhamento nativo ainda pendentes**.
+- **Histórico → PDF completo** generates a **downloadable PDF for the active condominium**, grouped by meter, with all database readings (fetched in pages), date, full value, period consumption, registration notes and **photos where present**. Historical entries without photos are explicitly labeled.
+- Each meter includes a limited evidence-based natural-language summary. Period-based totals are not claimed to represent full calendar months. Trend analysis is indicative and does not diagnose leaks.
+- PDF generation requires network access to load `jsPDF` from CDN on first use and to download private photos while authenticated. A photo-access error aborts the export instead of silently omitting the evidence. Large photo-heavy reports may take time and use substantial memory; prefer exporting on desktop for very large histories.
+- The PDF is generated in the browser; the service does not receive the completed PDF. Handle exports as private condominium documents.
+
+### Tutorial upkeep
+
+- Help is always accessible via **? Ajuda** and opens automatically once per role and version (`hc_tutorial_v030_*`). It now covers condominium switching, importing legacy data, the read-only preview and PDF export.
+- **Every future release that changes the user workflow must update both the in-app tutorial and this README.** Technical documentation in English; end-user UI/tutorial in Brazilian Portuguese.
+
+## Security and practical limitations
+
+- Supabase Row Level Security is authoritative; hiding a button is never a sufficient permission check. Worker accounts cannot create condominiums or correct readings. Managers can only manage condominiums where they are admins. Temporary support authorization continues to be scoped and expirable.
+- Client-side checks are for usability. Backend trigger validates sequential values, but **two readings on the same date are still forbidden**, and there is no rollover/reset workflow.
+- Historically imported values **lack photographic evidence**, so the UI/PDF must never imply they were camera-verified.
+- Exporting to PDF requires CDN network availability. Browser/PWA sharing limitations for WhatsApp remain unchanged: some devices cannot share a PNG and caption together.
+- **Not tested against your live Supabase project or WhatsApp devices**. Automated tests cover historical parsing and calculations; database RLS and PDF photo completeness require real-environment testing.
+
+## Files to update
+
+Replace on the publishing branch: `index.html`, `app.js`, `math.js`, `styles.css`, `sw.js`, `README.md`, `manifest.webmanifest`, `package.json`, and `tests/math.test.js`.
+
+Add: `historical.js`, `sql/upgrade_0_3_0.sql`, `tests/historical.test.js`.
+
+Keep unchanged: `analysis.js`, `config.js` (**must preserve your real credentials**), `sql/setup.sql`, `sql/upgrade_0_2_0.sql`, icons, and existing analysis tests.
+
+Remove: no files. OCR code was removed from existing files.
+
+## Manual test checklist
+
+1. Login as manager. Create condominium A, return to the selector, create condominium B. Switch between them and verify readings and settings do not cross over.
+2. Login as worker in a separate browser. Redeem an invitation to A, then B, and switch without logging out. Verify no manager-only controls appear and API cannot create condominiums.
+3. Manager clicks **Ver como zelador(a)**; verify the worker view appears but recording cannot be submitted; click **Voltar à administração**.
+4. Import several 2025 readings with no photos. Verify order, preview, zero-consumption intervals, and that all rows appear as historical. Attempt impossible dates, duplicate dates and decreasing values; verify rejection.
+5. Test the *same validations against the backend* (direct API/RLS as well as normal UI). Create a new meter to represent a real replacement/reset.
+6. Export PDF with multiple meters and a mix of readings with/without photos. Confirm all rows and available photos appear. Test both small and large report sizes.
+7. Confirm dark mode, onboarding, existing login, image reporting/WhatsApp, service-worker refresh and tutorial. Verify temporary support session expiry and revocation still work.
+
+Run local tests: `npm test`. Serve locally: `npm run dev` and open `http://localhost:8080` (requires your own `config.js`).
+
+## GitHub release
+
+- **Tag:** `v0.3.0-beta`
+- **Title:** `HidroCondo v0.3.0-beta — Multi-condominium, History Import & PDF Export`
+- **Mark as pre-release** until real Supabase / mobile tests pass.
+- **Commit:** `feat: support multiple condominiums, historical imports and PDF reports`
+- Create the release **after committing the new source files** so the tag points to the correct revision.

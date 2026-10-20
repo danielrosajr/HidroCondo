@@ -25,7 +25,8 @@
       </div>
       <div id="account-top" class="account-top" hidden>
         <span id="top-condo" class="top-condo"></span>
-        <button id="logout" class="btn btn-ghost btn-small" type="button">Sair</button>
+        <button id="switch-condo" class="btn btn-secondary btn-small" type="button">⇄ Condomínios</button>
+        <button id="logout" class="btn btn-ghost btn-small" type="button">Sair da conta</button>
       </div>
     </header>
 
@@ -85,18 +86,23 @@
       </form>
     </section>
     <section id="screen-onboard" class="onboard" hidden>
-      <div class="section-heading"><h1 id="onboard-title">Ativar seu acesso</h1><p id="onboard-subtitle">Vamos conectar sua conta.</p></div>
-      <div class="onboard-grid single-card">
+      <div class="section-heading"><h1 id="onboard-title">Escolher condomínio</h1><p id="onboard-subtitle">Uma conta para todos os seus condomínios.</p></div>
+      <div class="panel" id="workspace-panel" hidden>
+        <h2>Seus condomínios</h2><p>Selecione onde deseja trabalhar. Nenhum vínculo é removido ao trocar.</p>
+        <div id="workspace-list" class="workspace-list"></div>
+      </div>
+      <div class="onboard-actions"><button id="onboard-logout" type="button" class="btn btn-ghost btn-small">Sair da conta</button></div>
+      <div class="onboard-grid">
         <form id="create-condo-form" class="panel" hidden>
           <div class="tile-icon">🏢</div><h2>Meu condomínio</h2>
-          <p>Sua conta de síndico(a) permite criar um condomínio e convidar o(a) zelador(a).</p>
+          <p>Você pode administrar vários condomínios usando a mesma conta.</p>
           <label for="new-condo-name">Nome do condomínio</label>
           <input id="new-condo-name" required minlength="3" maxlength="120" placeholder="Ex.: Residencial das Flores">
           <button class="btn btn-primary btn-block" type="submit">Criar condomínio</button>
         </form>
         <form id="join-condo-form" class="panel" hidden>
           <div class="tile-icon">🔗</div><h2>Ativar acesso do zelador(a)</h2>
-          <p>Abra o link de convite enviado pelo(a) síndico(a). Se preferir, cole o link completo abaixo.</p>
+          <p>Você pode trabalhar em vários condomínios. Cole um novo convite para adicionar outro.</p>
           <label for="join-code">Link de ativação</label>
           <input id="join-code" required autocomplete="off" placeholder="https://.../HidroCondo/?convite=...">
           <button class="btn btn-primary btn-block" type="submit">Ativar meu acesso</button>
@@ -113,7 +119,10 @@
     </section>
 
     <section id="screen-app" hidden>
-      <div class="welcome-line"><div><span id="role-label" class="eyebrow"></span><h1 id="page-title">Visão geral</h1></div><button id="refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div>
+      <div class="welcome-line"><div><span id="role-label" class="eyebrow"></span><h1 id="page-title">Visão geral</h1></div><div class="button-row"><button id="worker-preview" type="button" class="btn btn-ghost btn-small" hidden>👁 Ver como zelador(a)</button><button id="refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div></div>
+      <div id="preview-notice" class="notice notice-info" hidden>
+        <strong>Modo de visualização — zelador(a).</strong> Esta é uma prévia sem alterações nos dados. <button id="exit-worker-preview" type="button" class="btn btn-secondary btn-small">Voltar à administração</button>
+      </div>
       <div id="worker-quick" class="panel worker-quick" hidden>
         <h2>Pronto para registrar?</h2>
         <p>Fotografe o visor, confirme o número e salve. O restante é automático.</p>
@@ -122,6 +131,7 @@
         <button type="button" data-tab="dashboard" data-hide-worker class="active">📊 Painel</button>
         <button type="button" data-tab="new" data-no-support>📷 Nova leitura</button>
         <button type="button" data-tab="history">🗂 Histórico</button>
+        <button type="button" data-tab="import" data-no-support>🕓 Histórico antigo</button>
         <button type="button" data-tab="settings" data-manager-only>⚙️ Ajustes</button>
       </nav>
 
@@ -143,10 +153,6 @@
             <div id="previous-reading" class="notice">Procurando leitura anterior...</div>
             <label for="reading-photo">Foto do visor <span class="required">*</span></label>
             <input id="reading-photo" type="file" accept="image/*" capture="environment">
-            <details class="advanced-ocr"><summary>✨ Tentar preencher número pela foto (experimental)</summary>
-              <button id="ocr-button" type="button" class="btn btn-secondary btn-small" style="margin-top:12px" disabled>Reconhecer números</button>
-              <p id="ocr-status" class="help" aria-live="polite"></p>
-            </details>
             <div id="photo-preview" class="photo-preview" hidden><img id="preview-image" alt="Foto do hidrômetro para conferência"></div>
             <p class="help">Confira os números com o visor. A foto é o comprovante da medição.</p>
             <div class="meter-inputs">
@@ -169,14 +175,36 @@
 
       <section id="tab-history" class="tab-content" hidden>
         <div class="panel">
-          <div class="panel-heading"><div><h2>Histórico de leituras</h2><p>Consulte medições, fotos e exporte os dados</p></div><button id="export-csv" type="button" class="btn btn-secondary btn-small">↓ CSV</button></div>
+          <div class="panel-heading"><div><h2>Histórico de leituras</h2><p>Consulte medições, fotos e exporte os dados</p></div><div class="button-row"><button id="export-csv" type="button" class="btn btn-secondary btn-small">↓ CSV</button><button id="export-pdf" type="button" class="btn btn-primary btn-small">↓ PDF completo</button></div></div>
+          <p class="help">O PDF reúne os hidrômetros, as medições, análises indicativas e as fotos existentes. Registros históricos sem foto são identificados.</p>
           <div class="toolbar"><label for="history-meter">Hidrômetro</label><select id="history-meter"></select></div>
           <div id="history-list" class="history-list"></div>
         </div>
       </section>
 
+      <section id="tab-import" class="tab-content" hidden>
+        <div class="panel narrow-form">
+          <h2>Adicionar histórico sem fotos</h2>
+          <p>Para registros antigos. Cada linha deve ter <strong>data;leitura</strong>. Use o mesmo hidrômetro para a sequência. Não apaga nem modifica medições existentes.</p>
+          <form id="historical-form">
+            <label for="historical-meter">Hidrômetro</label><select id="historical-meter" required></select>
+            <div class="historical-quick-row">
+              <div><label for="historical-quick-date">Data antiga</label><input type="date" id="historical-quick-date"></div>
+              <div><label for="historical-quick-value">Leitura (m³)</label><input type="text" id="historical-quick-value" inputmode="decimal" placeholder="3981,000"></div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-block" id="historical-append">＋ Adicionar medição à lista</button>
+            <label for="historical-paste">Medições para importar (uma por linha)</label>
+            <textarea id="historical-paste" rows="9" required spellcheck="false" placeholder="10/10/2025;3981,000&#10;17/10/2025;4.064,959"></textarea>
+            <p class="help">Use DD/MM/AAAA;4.064,959 ou AAAA-MM-DD;4064,959. Se houve troca/reset do hidrômetro, cadastre outro equipamento.</p>
+            <button id="historical-preview-button" type="button" class="btn btn-secondary btn-block">Conferir histórico</button>
+            <div id="historical-preview" class="notice" hidden></div>
+            <button id="historical-submit" type="submit" class="btn btn-primary btn-block" disabled>Salvar histórico confirmado</button>
+          </form>
+        </div>
+      </section>
+
       <section id="tab-settings" class="tab-content" hidden>
-        <div class="panel"><h2>Condomínio</h2><p id="settings-condo" class="hint"></p><p id="settings-role" class="hint"></p></div>
+        <div class="panel"><h2>Condomínio</h2><button id="settings-switch-condo" type="button" class="btn btn-secondary btn-small">⇄ Trocar de condomínio</button><p id="settings-condo" class="hint"></p><p id="settings-role" class="hint"></p></div>
         <div id="admin-settings" class="panel" hidden>
           <h2>Convidar zelador(a)</h2>
           <p>Crie um link pessoal. Ele funciona apenas uma vez e expira em 7 dias. Envie somente à pessoa autorizada.</p>
@@ -194,7 +222,7 @@
         <div class="panel"><h2>Sobre o aplicativo</h2><p>Fotos protegidas, leituras em m³ com três casas decimais e cálculos automáticos. Os dados são sincronizados online; o envio de medição exige internet.</p><p>Para evitar perda de dados, exporte o CSV periodicamente. Não compartilhe senhas nem a chave secreta do Supabase.</p></div>
       </section>
     </section>
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.2.0</span> • Feito para simplificar a rotina do condomínio</footer>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.3.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

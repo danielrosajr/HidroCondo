@@ -4,7 +4,7 @@
 /* 0.2.0: interface enxuta, tema claro/escuro e acessibilidade. */
 .utility-top{display:flex;gap:7px;margin-left:auto}.utility-top .btn{white-space:nowrap}
 .role-choice{border:1px solid var(--line);padding:14px;border-radius:12px;margin:18px 0 4px}.role-choice legend{font-weight:700;font-size:.9rem}.role-choice label,.onboard label:has(input[type="radio"]){display:flex;align-items:center;gap:9px;font-weight:500;margin:10px 0}.role-choice input[type="radio"],.onboard input[type="radio"]{width:auto;accent-color:var(--primary)}
-.single-card{grid-template-columns:minmax(0,590px);justify-content:center}.single-card .panel{width:100%}.worker-quick{border-left:5px solid var(--primary);padding:16px 20px;margin-top:8px}.worker-quick p{margin:0}.btn-xl{padding:16px;font-size:1.06rem;min-height:58px}.save-complete{text-align:center;border-color:var(--primary)}.save-complete h2{font-size:1.5rem}.save-complete .notice{text-align:left}.advanced-ocr{margin:12px 0;border-radius:10px;border:1px solid var(--line);padding:12px;color:var(--muted);font-size:.85rem}.advanced-ocr summary{cursor:pointer;font-weight:650}.advanced-ocr[open]{background:var(--bg)}.prose-summary{line-height:1.55;margin:12px 0;color:var(--text)}.analysis-detail{padding:9px 0 0}.analysis-detail p{border-bottom:1px solid var(--line);padding:8px 0;margin:0}.soft-line{border:0;border-top:1px solid var(--line);margin:27px 0}.support-entry{display:flex;gap:8px;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:9px 0;color:var(--muted);font-size:.82rem}.support-list{margin-top:15px}.tutorial-dialog{background:var(--panel);color:var(--text)}.tutorial-dialog ol{padding-left:23px}.tutorial-dialog li{padding:6px 0;line-height:1.5}.onboard .panel[hidden]{display:none}
+.single-card{grid-template-columns:minmax(0,590px);justify-content:center}.single-card .panel{width:100%}.worker-quick{border-left:5px solid var(--primary);padding:16px 20px;margin-top:8px}.worker-quick p{margin:0}.btn-xl{padding:16px;font-size:1.06rem;min-height:58px}.save-complete{text-align:center;border-color:var(--primary)}.save-complete h2{font-size:1.5rem}.save-complete .notice{text-align:left}.prose-summary{line-height:1.55;margin:12px 0;color:var(--text)}.analysis-detail{padding:9px 0 0}.analysis-detail p{border-bottom:1px solid var(--line);padding:8px 0;margin:0}.soft-line{border:0;border-top:1px solid var(--line);margin:27px 0}.support-entry{display:flex;gap:8px;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding:9px 0;color:var(--muted);font-size:.82rem}.support-list{margin-top:15px}.tutorial-dialog{background:var(--panel);color:var(--text)}.tutorial-dialog ol{padding-left:23px}.tutorial-dialog li{padding:6px 0;line-height:1.5}.onboard .panel[hidden]{display:none}
 :root[data-theme="dark"]{color-scheme:dark;--primary:#3dbac7;--primary-dark:#86dce5;--teal:#173a43;--bg:#0b151c;--panel:#16252e;--text:#eaf3f6;--muted:#a6bac3;--line:#37505a;--shadow:0 10px 36px #00000020;--warn:#ffc17f;--warn-bg:#3b2b24}
 @media(prefers-color-scheme:dark){:root[data-theme="auto"]{color-scheme:dark;--primary:#3dbac7;--primary-dark:#86dce5;--teal:#173a43;--bg:#0b151c;--panel:#16252e;--text:#eaf3f6;--muted:#a6bac3;--line:#37505a;--shadow:0 10px 36px #00000020;--warn:#ffc17f;--warn-bg:#3b2b24}}
 :root[data-theme="dark"] .summary-tile,:root[data-theme="dark"] input,:root[data-theme="dark"] textarea,:root[data-theme="dark"] select,:root[data-theme="dark"] .segmented button.selected,:root[data-theme="dark"] .dialog{background:var(--panel);color:var(--text);border-color:var(--line)}
@@ -22,3 +22,17 @@
 :root[data-theme="auto"] .brand-icon,:root[data-theme="auto"] .feature-bullets span{background:#17434b}
 :root[data-theme="auto"] .latest-photo{background:#1c333d}}
 @media(max-width:630px){.topbar{flex-wrap:wrap}.utility-top{order:3;width:100%;justify-content:flex-end}.utility-top .btn{padding:6px 9px}.single-card .panel{padding:21px}.support-entry{flex-wrap:wrap}.invite-bar{flex-wrap:wrap}.invite-bar input{flex:1 1 240px}}
+
+/* v0.3.0: workspace selector / lightweight worker preview / historical paste */
+.workspace-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.workspace-card{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:16px;border-radius:12px;text-align:left;display:flex;flex-direction:column;gap:5px;min-height:90px;font-weight:650}
+.workspace-card:hover,.workspace-card:focus-visible{outline:2px solid var(--primary)}
+.workspace-card small{font-size:.76rem;color:var(--muted);font-weight:500}
+.onboard-actions{display:flex;justify-content:flex-end;margin-bottom:16px}
+#historical-paste{font-family:ui-monospace,Consolas,monospace;line-height:1.65;min-height:170px}
+#historical-preview p{margin:6px 0}
+#preview-notice{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+@media(max-width:640px){.account-top{width:100%;justify-content:flex-end;flex-wrap:wrap}.onboard-grid{grid-template-columns:1fr}.welcome-line{flex-wrap:wrap}}
+
+.historical-quick-row{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+@media(max-width:450px){.historical-quick-row{grid-template-columns:1fr}}

@@ -1,10 +1,11 @@
-import {parseWholeMeter, parseDecimalMeter, readValue, toMillis, toM3String, formatM3, buildIntervals, analyzeLatest, localDate, fmtDate, diffDays, parseOcrCandidates} from './math.js';
+import {parseWholeMeter, parseDecimalMeter, readValue, toMillis, toM3String, formatM3, buildIntervals, analyzeLatest, localDate, fmtDate, diffDays} from './math.js';
 import {getWaterInsights} from './analysis.js';
+import {parseHistoricalText,previewHistorical} from './historical.js';
 
 const $ = id => document.getElementById(id);
 const STORE = 'hidrocondo-fotos';
-const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto'};
-const canCorrect = ()=>state.role==='sindica'||state.role==='suporte';
+const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null};
+const canCorrect = ()=>(state.role==='sindica'||state.role==='suporte')&&!state.previewWorker;
 const isManager = ()=>state.role==='sindica';
 const homeUrl=()=>location.origin+location.pathname;
 const number = n => Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:1});
@@ -29,6 +30,8 @@ function makeUUID(){return crypto.randomUUID();}
 function currentMeterId(){return state.meterId || state.meters[0]?.id;}
 function meterReadings(id=currentMeterId()){return state.readings.filter(x=>x.meter_id===id).sort((a,b)=>a.measured_on.localeCompare(b.measured_on));}
 function getIntervals(id=currentMeterId()){return buildIntervals(meterReadings(id));}
+const activeKey=()=>`hidrocondo_active_${state.user?.id||'guest'}`;
+function viewWorker(){return state.role==='zelador'||state.previewWorker;}
 function userDisplayName(){return state.user?.user_metadata?.full_name?.trim() || state.user?.email?.split('@')[0] || 'Responsável';}
 
 async function bootstrap(){
@@ -43,49 +46,64 @@ async function bootstrap(){
   if(pe)throw Error('Atualize o banco: execute sql/upgrade_0_2_0.sql no Supabase. '+pe.message);
   state.profile=profile?.account_type||null;
   if(!state.profile){state.role=null;return screens('profile');}
-  const {data:member,error:e}=await state.db.from('memberships')
+  const {data:members,error:e}=await state.db.from('memberships')
     .select('condominium_id,role,condominiums(id,name)')
-    .eq('user_id',user.id).maybeSingle();
-  if(e)throw e;
-  state.member=member;state.condo=null;state.role=null;
-  if(member){
-    state.role=member.role;state.condo=member.condominiums;
-  }else if(state.profile==='suporte'){
+    .eq('user_id',user.id).order('created_at',{ascending:true});
+  if(e)throw Error('Verifique se executou sql/upgrade_0_3_0.sql. '+e.message);
+  const spaces=(members||[]).map(m=>({id:m.condominium_id,name:m.condominiums?.name||'Condomínio',role:m.role,member:m}));
+  if(state.profile==='suporte'){
     const {data:grants,error:se}=await state.db.from('support_grants')
       .select('condominium_id,expires_at').eq('support_user_id',user.id)
-      .is('revoked_at',null).gt('expires_at',new Date().toISOString())
-      .order('expires_at',{ascending:false}).limit(1);
+      .is('revoked_at',null).gt('expires_at',new Date().toISOString());
     if(se)throw se;
-    if(grants?.length){
+    for(const grant of grants||[]){
       const {data:condo,error:ce}=await state.db.from('condominiums')
-        .select('id,name').eq('id',grants[0].condominium_id).single();
+        .select('id,name').eq('id',grant.condominium_id).maybeSingle();
       if(ce)throw ce;
-      state.role='suporte';state.condo=condo;
+      if(condo)spaces.push({id:condo.id,name:condo.name,role:'suporte',expires_at:grant.expires_at});
     }
   }
+  state.workspaces=spaces;
+  const params=new URLSearchParams(location.search);
+  const invitePending=(params.has('convite')&&state.profile==='zelador')||(params.has('suporte')&&state.profile==='suporte');
+  const stored=localStorage.getItem(activeKey());
+  const chosen=spaces.find(x=>x.id===stored) || (spaces.length===1?spaces[0]:null);
+  state.member=null;state.condo=null;state.role=null;
+  if(!state.pickerOpen&&!invitePending&&chosen){
+    state.member=chosen.member||null;
+    state.role=chosen.role;
+    state.condo={id:chosen.id,name:chosen.name};
+    localStorage.setItem(activeKey(),chosen.id);
+  }
   if(!state.condo){
+    $('workspace-panel').hidden=spaces.length===0;
+    $('workspace-list').replaceChildren(...spaces.map(item=>{
+      const btn=document.createElement('button');btn.type='button';btn.className='workspace-card';btn.dataset.workspace=item.id;
+      const title=document.createElement('strong');title.textContent=item.name;
+      const caption=document.createElement('small');caption.textContent=item.role==='sindica'?'Síndico(a)':item.role==='zelador'?'Zelador(a)':'Suporte temporário';
+      btn.append(title,caption);return btn;
+    }));
     $('create-condo-form').hidden=state.profile!=='sindico';
     $('join-condo-form').hidden=state.profile!=='zelador';
     $('support-join-form').hidden=state.profile!=='suporte';
-    $('onboard-title').textContent=state.profile==='sindico'?'Criar seu condomínio':
-      state.profile==='zelador'?'Ativar acesso ao condomínio':'Ativar sessão de suporte';
-    $('onboard-subtitle').textContent=state.profile==='zelador'?'Seu acesso começa pelo convite do(a) síndico(a).':
-      state.profile==='suporte'?'Seu acesso depende de autorização temporária do condomínio.':'Configure o espaço de trabalho.';
-    const params=new URLSearchParams(location.search);
+    $('onboard-title').textContent=spaces.length?'Escolha um condomínio':'Ativar seu primeiro condomínio';
+    $('onboard-subtitle').textContent=spaces.length?
+      'Seu e-mail pode acessar vários condomínios. Selecione um ou adicione outro.':
+      state.profile==='sindico'?'Crie seu condomínio. Você poderá adicionar outros depois.':
+      state.profile==='zelador'?'Cole o convite do(a) síndico(a).':'Ative um convite de suporte temporário.';
     if(params.get('convite'))$('join-code').value=homeUrl()+'?convite='+params.get('convite');
     if(params.get('suporte'))$('support-join-code').value=homeUrl()+'?suporte='+params.get('suporte');
+    state.pickerOpen=false;
     return screens('onboard');
   }
+  state.pickerOpen=false;
+  state.previewWorker=false;
   $('top-condo').textContent=state.condo.name;
   $('role-label').textContent=state.role==='sindica'?'PAINEL DO(A) SÍNDICO(A)':
     state.role==='suporte'?'SUPORTE TEMPORÁRIO':'ÁREA DO ZELADOR(A)';
   $('settings-condo').textContent=state.condo.name;
   $('settings-role').textContent=`Seu acesso: ${state.role==='sindica'?'Síndico(a) (administração)':state.role==='suporte'?'Suporte temporário':'Zelador(a) (registra leituras)'}`;
-  $('admin-settings').hidden=!isManager();
-  $('worker-quick').hidden=state.role!=='zelador';
-  for(const node of document.querySelectorAll('[data-manager-only]'))node.hidden=state.role!=='sindica';
-  for(const node of document.querySelectorAll('[data-hide-worker]'))node.hidden=state.role==='zelador';
-  for(const node of document.querySelectorAll('[data-no-support]'))node.hidden=state.role==='suporte';
+  applyRoleView();
   $('reading-date').value=localDate();
   $('reading-form').closest('.panel').hidden=false;
   $('after-save').hidden=true;
@@ -112,17 +130,41 @@ async function loadData(){
   $('sync-label').textContent=`Atualizado ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} · automaticamente a cada 30 s`;
 }
 function renderMeters(){
-  for(const id of ['dash-meter','history-meter','new-meter']){
+  for(const id of ['dash-meter','history-meter','new-meter','historical-meter']){
     const select=$(id),saved=id==='new-meter'?select.value:state.meterId;
     select.replaceChildren(...state.meters.map(m=>{const el=document.createElement('option');el.value=m.id;el.textContent=m.name;return el;}));
     select.value=state.meters.some(m=>m.id===saved)?saved:(state.meterId||'');
   }
 }
+function applyRoleView(){
+  const worker=viewWorker();
+  $('preview-notice').hidden=!state.previewWorker;
+  $('worker-preview').hidden=state.role==='zelador';
+  $('worker-preview').textContent=state.previewWorker?'↩ Voltar à administração':'👁 Ver como zelador(a)';
+  $('role-label').textContent=state.previewWorker?'PRÉVIA DO ZELADOR(A)':state.role==='sindica'?'PAINEL DO(A) SÍNDICO(A)':
+    state.role==='suporte'?'SUPORTE TEMPORÁRIO':'ÁREA DO ZELADOR(A)';
+  $('admin-settings').hidden=worker||!isManager();
+  $('worker-quick').hidden=!worker;
+  for(const node of document.querySelectorAll('[data-manager-only]'))node.hidden=worker||!isManager();
+  for(const node of document.querySelectorAll('[data-hide-worker]'))node.hidden=worker;
+  for(const node of document.querySelectorAll('[data-no-support]'))node.hidden=state.role==='suporte'&&!worker;
+  for(const node of document.querySelectorAll('[data-tab="import"]'))node.hidden=state.previewWorker||state.role==='suporte';
+  $('reading-form').querySelectorAll('input,select,button').forEach(el=>el.disabled=state.previewWorker);
+  $('historical-form').querySelectorAll('input,select,textarea,button').forEach(el=>el.disabled=state.previewWorker);
+  if(!state.previewWorker)$('historical-submit').disabled=!state.pendingHistory;
+}
+function toggleWorkerPreview(){
+  if(state.role==='zelador')return;
+  state.previewWorker=!state.previewWorker;
+  applyRoleView();setTab(state.previewWorker?'new':'dashboard');
+  toast(state.previewWorker?'Prévia ativada: sem gravações e sem alterações.':'Voltando à visão administrativa.');
+}
 function setTab(tab){
-  if(state.role==='zelador'&&['dashboard','settings'].includes(tab))tab='new';
-  if(state.role==='suporte'&&tab==='new')tab='dashboard';
+  if(viewWorker()&&['dashboard','settings'].includes(tab))tab='new';
+  if(state.previewWorker&&tab==='import')tab='new';
+  if(state.role==='suporte'&&['new','import'].includes(tab)&&!state.previewWorker)tab='dashboard';
   state.tab=tab;
-  const titles={dashboard:'Visão geral',new:'Nova leitura',history:'Histórico',settings:'Configurações'};
+  const titles={dashboard:'Visão geral',new:'Nova leitura',history:'Histórico',import:'Histórico antigo',settings:'Configurações'};
   $('page-title').textContent=titles[tab];
   for(const btn of document.querySelectorAll('[data-tab]'))btn.classList.toggle('active',btn.dataset.tab===tab);
   for(const id of Object.keys(titles))$('tab-'+id).hidden=id!==tab;
@@ -181,7 +223,7 @@ function renderHistory(){
   const correctedIds=new Set(state.audits.map(a=>a.reading_id));
   $('history-list').innerHTML=intervals.map(row=>`<article class="history-row"><div>
     <strong>${fmtDate(row.measured_on)} — ${formatM3(toMillis(row.value_m3))} m³</strong>
-    ${correctedIds.has(row.id)?'<span class="pill">Corrigida</span>':''}
+    ${correctedIds.has(row.id)?'<span class="pill">Corrigida</span>':''} ${row.entry_kind==='historical'?'<span class="pill">Histórico sem foto</span>':''}
     <div class="history-meta">${row.previous?`Consumo: ${formatM3(row.consumed)} m³ em ${row.days} dias`:'Leitura de referência (sem consumo calculado)'}</div>
     <div class="history-meta">Registrado por ${escapeHtml(row.registered_by_name)} ${row.photo_path?'· com foto':'· sem foto'}</div>
   </div><div class="history-actions">
@@ -223,47 +265,8 @@ async function compressImage(file){
   cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
   return new Promise((resolve,reject)=>cv.toBlob(b=>b?resolve(b):reject(Error('Não foi possível processar a foto.')),'image/webp',.84));
 }
-async function loadOcrScript(){
-  if(window.Tesseract)return;
-  await new Promise((resolve,reject)=>{
-    const script=document.createElement('script');
-    script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    script.onload=resolve;
-    script.onerror=()=>reject(Error('Não foi possível carregar o reconhecimento OCR. Verifique sua internet.'));
-    document.head.appendChild(script);
-  });
-}
-async function assistOcr(){
-  const btn=$('ocr-button'),file=$('reading-photo').files?.[0];
-  if(!file)throw Error('Tire uma foto antes de tentar reconhecer os números.');
-  setBusy(btn,true,'Analisando foto...');
-  const status=$('ocr-status');status.textContent='Carregando OCR (pode levar algum tempo no primeiro uso)...';
-  let worker;
-  try{
-    await loadOcrScript();
-    worker=await window.Tesseract.createWorker('eng');
-    await worker.setParameters({tessedit_char_whitelist:'0123456789.,'});
-    status.textContent='Procurando a leitura acumulada na imagem...';
-    const {data}=await worker.recognize(file);
-    const possible=parseOcrCandidates(data.text);
-    const previous=meterReadings($('new-meter').value)
-      .filter(r=>r.measured_on<$('reading-date').value).at(-1);
-    const min=previous?toMillis(previous.value_m3):0;
-    const selected=possible.filter(x=>x>=min).sort((a,b)=>previous?(a-min)-(b-min):b-a)[0];
-    if(selected===undefined){
-      status.textContent='O OCR não conseguiu identificar a leitura com segurança. Digite os números manualmente.';
-      return;
-    }
-    $('whole-reading').value=String(Math.floor(selected/1000));
-    $('decimal-reading').value=String(selected%1000).padStart(3,'0');
-    updateLive();
-    status.textContent=`Sugestão OCR: ${formatM3(selected)} m³. ATENÇÃO: confirme visualmente o número!`;
-    toast('Números sugeridos. Confira com o visor antes de salvar.');
-  } finally {if(worker)await worker.terminate();setBusy(btn,false);}
-}
-
 async function saveReading(e){
-  e.preventDefault();const btn=$('save-reading');setBusy(btn,true,'Salvando...');
+  e.preventDefault();if(state.previewWorker)throw Error('Modo de visualização: não é possível salvar.');const btn=$('save-reading');setBusy(btn,true,'Salvando...');
   let uploaded=null;
   try{
     const meterId=$('new-meter').value,date=$('reading-date').value;
@@ -288,7 +291,7 @@ async function saveReading(e){
       measured_on:date,value_m3:toM3String(value),photo_path:uploaded,created_by:state.user.id,
       registered_by_name:userDisplayName()}).select().single();
     if(insert.error)throw insert.error;
-    $('reading-form').reset();$('reading-date').value=localDate();$('photo-preview').hidden=true;$('ocr-button').disabled=true;$('ocr-status').textContent='';uploaded=null;
+    $('reading-form').reset();$('reading-date').value=localDate();$('photo-preview').hidden=true;uploaded=null;
     toast('Medição salva! O(a) síndico(a) já pode consultar.');
     state.meterId=meterId;state.lastSaved=insert.data;await loadData();setTab('new');
     cachedReport(insert.data).catch(console.warn);
@@ -456,6 +459,160 @@ async function saveCorrection(e){
   if(result.error)throw result.error;
   $('edit-dialog').close();toast('Leitura corrigida. A alteração foi registrada para auditoria.');await loadData();
 }
+function clearHistoricalPreview(){
+  state.pendingHistory=null;$('historical-preview').hidden=true;
+  $('historical-submit').disabled=true;
+}
+function showHistoricalPreview(){
+  if(state.previewWorker)throw Error('Saia da visualização para importar leituras.');
+  clearHistoricalPreview();
+  const meterId=$('historical-meter').value;
+  if(!meterId)throw Error('Escolha um hidrômetro.');
+  const rows=parseHistoricalText($('historical-paste').value);
+  const summary=previewHistorical(rows,meterReadings(meterId),localDate());
+  const box=$('historical-preview');
+  box.replaceChildren();box.hidden=false;
+  const p=document.createElement('p');p.textContent=`${summary.count} leituras de ${fmtDate(summary.first)} até ${fmtDate(summary.last)}.`;box.append(p);
+  const sample=document.createElement('p');sample.textContent='Exemplos: '+rows.slice(0,5).map(r=>`${fmtDate(r.measured_on)} → ${formatM3(r.milli)} m³`).join(' | ');box.append(sample);
+  const info=document.createElement('p');info.textContent=summary.total===null?
+    'Uma leitura de referência, sem consumo para o período.':
+    `Entre a primeira e a última leitura importada: ${formatM3(summary.total)} m³ em ${summary.days} dia(s).`;
+  box.append(info);
+  const note=document.createElement('strong');note.textContent='Atenção: esses dados serão marcados como históricos SEM foto. Confira os valores antes de salvar.';box.append(note);
+  state.pendingHistory={meterId,rows,text:$('historical-paste').value};
+  $('historical-submit').disabled=false;
+}
+async function saveHistorical(e){
+  e.preventDefault();if(state.previewWorker||state.role==='suporte')throw Error('Sem permissão para importar histórico.');
+  const pending=state.pendingHistory;
+  if(!pending||pending.meterId!==$('historical-meter').value||pending.text!==$('historical-paste').value)
+    throw Error('Revise o histórico antes de confirmar.');
+  previewHistorical(pending.rows,meterReadings(pending.meterId),localDate());
+  const btn=$('historical-submit');setBusy(btn,true,'Gravando histórico...');
+  try{
+    const payload=pending.rows.map(r=>({condominium_id:state.condo.id,meter_id:pending.meterId,
+      measured_on:r.measured_on,value_m3:toM3String(r.milli),photo_path:null,entry_kind:'historical',
+      created_by:state.user.id,registered_by_name:userDisplayName()}));
+    // One SQL insert statement: if any row fails the transaction is rolled back.
+    const {error}=await state.db.from('readings').insert(payload);if(error)throw error;
+    clearHistoricalPreview();$('historical-paste').value='';await loadData();
+    toast(`${payload.length} leituras históricas salvas com sucesso.`);
+    setTab('history');
+  }finally{setBusy(btn,false);}
+}
+
+async function loadPdfLibrary(){
+  if(window.jspdf?.jsPDF)return window.jspdf.jsPDF;
+  await new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
+    script.crossOrigin='anonymous';
+    script.onload=resolve;
+    script.onerror=()=>reject(Error('Não foi possível carregar a biblioteca de PDF. Verifique a internet.'));
+    document.head.appendChild(script);
+  });
+  if(!window.jspdf?.jsPDF)throw Error('Biblioteca PDF não disponível.');
+  return window.jspdf.jsPDF;
+}
+async function fetchAllReadingsForPdf(){
+  const results=[];const step=400;
+  for(let start=0;;start+=step){
+    const {data,error}=await state.db.from('readings').select('*')
+      .eq('condominium_id',state.condo.id).order('measured_on',{ascending:true}).order('id',{ascending:true})
+      .range(start,start+step-1);
+    if(error)throw error;
+    results.push(...data);
+    if(data.length<step)break;
+  }
+  return results;
+}
+async function getImageForPdf(photoPath){
+  const blob=await getPrivateBlob(photoPath);
+  const img=await fileToBitmap(blob);
+  const width=1100,height=750,ratio=Math.min(1,width/img.naturalWidth,height/img.naturalHeight);
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(img.naturalWidth*ratio));
+  canvas.height=Math.max(1,Math.round(img.naturalHeight*ratio));
+  const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  return {data:canvas.toDataURL('image/jpeg',0.62),ratio:canvas.width/canvas.height};
+}
+async function exportPDF(){
+  if(!state.condo)throw Error('Escolha primeiro um condomínio.');
+  const btn=$('export-pdf');setBusy(btn,true,'Preparando PDF...');
+  try{
+    const jsPDF=await loadPdfLibrary();
+    const condoId=state.condo.id,condoName=state.condo.name;
+    const records=await fetchAllReadingsForPdf();
+    if(!records.length)throw Error('Ainda não existem medições para exportar.');
+    const doc=new jsPDF({unit:'mm',format:'a4',compress:true});
+    const bottom=276,left=19,width=172;
+    let y=20;
+    const nextPage=()=>{doc.addPage();y=20;};
+    const requireSpace=(height)=>{if(y+height>bottom)nextPage();};
+    function write(text,{size=10,bold=false,gap=2}={}){
+      doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(size);
+      const lines=doc.splitTextToSize(String(text??''),width);
+      const height=Math.max(1,lines.length)*(size*0.39+1.5);
+      requireSpace(height+gap);
+      doc.text(lines,left,y);
+      y+=height+gap;
+    }
+    doc.setTextColor(10,76,89);
+    write('HIDROCONDO | RELATORIO COMPLETO',{size:17,bold:true,gap:5});
+    doc.setTextColor(25,51,57);
+    write(condoName,{size:15,bold:true});
+    write(`Gerado em ${new Date().toLocaleString('pt-BR')} | ${records.length} leitura(s) | ${state.meters.length} hidrômetro(s)`);
+    write('Todas as leituras e fotos existentes são incluídas abaixo. Importações antigas podem não ter imagem. Não compartilhe este documento fora das pessoas autorizadas.');
+    write('O consumo só é calculado entre duas leituras do mesmo hidrômetro. Tendências são estimativas, não diagnósticos.',{size:9});
+    for(const meter of state.meters){
+      const rows=records.filter(r=>r.meter_id===meter.id);
+      if(!rows.length)continue;
+      nextPage();
+      doc.setTextColor(10,76,89);
+      write(meter.name,{size:15,bold:true,gap:4});
+      doc.setTextColor(25,51,57);
+      write(`${rows.length} registro(s) | ${fmtDate(rows[0].measured_on)} a ${fmtDate(rows.at(-1).measured_on)}`);
+      const insight=getWaterInsights(rows,rows.at(-1).measured_on);
+      for(const paragraph of [insight.lastText,insight.recentText,insight.trend,insight.monthlyText,insight.warning]){
+        write(paragraph,{size:9,gap:2});
+      }
+      const intervals=buildIntervals(rows);
+      for(const [i,row] of intervals.entries()){
+        // At least the metadata must fit together.
+        requireSpace(row.photo_path?85:42);
+        doc.setDrawColor(211,226,230);
+        doc.line(left,y,left+width,y);y+=7;
+        doc.setTextColor(10,76,89);
+        write(`${i+1}. ${fmtDate(row.measured_on)}  |  ${formatM3(toMillis(row.value_m3))} m³`,{bold:true,size:11});
+        doc.setTextColor(25,51,57);
+        write(row.previous?
+          `Anterior: ${formatM3(toMillis(row.previous.value_m3))} m³ | Consumo: ${formatM3(row.consumed)} m³ em ${row.days} dia(s)`:
+          'Leitura de referência: não existe consumo anterior para calcular.',{size:9});
+        write(`Responsável: ${row.registered_by_name} | Tipo: ${row.entry_kind==='historical'?'Histórico manual sem foto':'Leitura regular'}` ,{size:9});
+        if(row.correction_note)write(`Correção registrada: ${row.correction_note}`,{size:9});
+        if(row.photo_path){
+          // Do not silently deliver an incomplete "complete PDF" on a storage error.
+          const photo=await getImageForPdf(row.photo_path);
+          const h=Math.min(56,125/photo.ratio),w=Math.min(125,h*photo.ratio);
+          requireSpace(h+6);
+          doc.addImage(photo.data,'JPEG',left,y,w,h,undefined,'FAST');
+          y+=h+8;
+        } else write('Sem fotografia associada a esta leitura.',{size:9});
+        if(i%10===0)await new Promise(resolve=>setTimeout(resolve,0));
+      }
+    }
+    const total=doc.getNumberOfPages();
+    for(let i=1;i<=total;i++){
+      doc.setPage(i);doc.setFontSize(8);doc.setTextColor(105,125,135);
+      doc.text(`HidroCondo  |  ${condoName}  |  Página ${i}/${total}`,left,286);
+    }
+    if(state.condo?.id!==condoId)throw Error('O condomínio ativo mudou durante a exportação. Tente novamente.');
+    doc.save(`hidrocondo-relatorio-${localDate()}.pdf`);
+    toast(`PDF completo gerado (${records.length} leituras).`);
+  } finally{setBusy(btn,false);}
+}
+
 function exportCSV(){
   const id=$('history-meter').value||currentMeterId();const meter=state.meters.find(m=>m.id===id)?.name||'Hidrômetro';
   const rows=getIntervals(id);
@@ -494,22 +651,35 @@ function bindEvents(){
     e.preventDefault();const role=document.querySelector('input[name="legacy-role"]:checked').value;
     const {error}=await state.db.rpc('hc_choose_profile',{p_role:role});if(error)throw error;await bootstrap();
   }));
-  $('logout').addEventListener('click',guard(async()=>{const {error}=await state.db.auth.signOut();if(error)throw error;state.member=null;state.condo=null;state.meters=[];state.readings=[];screens('auth');}));
+  const signOut=guard(async()=>{const {error}=await state.db.auth.signOut();if(error)throw error;state.member=null;state.condo=null;state.meters=[];state.readings=[];screens('auth');});
+  $('logout').addEventListener('click',signOut);
+  $('onboard-logout').addEventListener('click',signOut);
+  function showWorkspacePicker(){state.previewWorker=false;state.pickerOpen=true;state.condo=null;state.readings=[];state.meters=[];state.lastSaved=null;state.pendingHistory=null;reportCache.clear();bootstrap().catch(err=>toast(apiError(err),true));}
+  $('switch-condo').addEventListener('click',showWorkspacePicker);
+  $('settings-switch-condo').addEventListener('click',showWorkspacePicker);
+  $('workspace-list').addEventListener('click',guard(async e=>{
+    const btn=e.target.closest('button[data-workspace]');if(!btn)return;
+    const space=state.workspaces.find(x=>x.id===btn.dataset.workspace);if(!space)return;
+    localStorage.setItem(activeKey(),space.id);state.pickerOpen=false;
+    clearInviteQuery();await bootstrap();
+  }));
+  $('worker-preview').addEventListener('click',toggleWorkerPreview);
+  $('exit-worker-preview').addEventListener('click',toggleWorkerPreview);
   $('create-condo-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const btn=e.currentTarget.querySelector('button');setBusy(btn,true);
     try{if(state.profile!=='sindico')throw Error('Perfil sem permissão de criar condomínio.');
-      const {error}=await state.db.from('condominiums').insert({name:$('new-condo-name').value.trim(),owner_id:state.user.id});if(error)throw error;await bootstrap();toast('Condomínio criado! Gere um link de convite em Ajustes.');}finally{setBusy(btn,false);}
+      const {data,error}=await state.db.from('condominiums').insert({name:$('new-condo-name').value.trim(),owner_id:state.user.id}).select('id').single();if(error)throw error;localStorage.setItem(activeKey(),data.id);state.pickerOpen=false;await bootstrap();toast('Condomínio criado! Gere um link de convite em Ajustes.');}finally{setBusy(btn,false);}
   }));
   $('join-condo-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const btn=e.currentTarget.querySelector('button');setBusy(btn,true);
     try{const token=extractToken($('join-code').value,'convite');
-      const {error}=await state.db.rpc('hc_redeem_worker_invite',{p_token:token});
-      if(error)throw error;clearInviteQuery();await bootstrap();toast('Acesso ativado! Agora você pode registrar medições.');}finally{setBusy(btn,false);}
+      const {data,error}=await state.db.rpc('hc_redeem_worker_invite',{p_token:token});
+      if(error)throw error;localStorage.setItem(activeKey(),data);state.pickerOpen=false;clearInviteQuery();await bootstrap();toast('Acesso ativado! Agora você pode registrar medições.');}finally{setBusy(btn,false);}
   }));
   $('support-join-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();const token=extractToken($('support-join-code').value,'suporte');
     const {error}=await state.db.rpc('hc_redeem_support_invite',{p_token:token});
-    if(error)throw error;clearInviteQuery();await bootstrap();toast('Sessão de suporte ativada por até 90 minutos.');
+    if(error)throw error;state.pickerOpen=false;clearInviteQuery();await bootstrap();toast('Sessão de suporte ativada por até 90 minutos.');
   }));
   for(const btn of document.querySelectorAll('[data-tab]'))btn.addEventListener('click',()=>setTab(btn.dataset.tab));
   $('refresh').addEventListener('click',guard(async()=>{await loadData();toast('Painel atualizado.');}));
@@ -517,7 +687,7 @@ function bindEvents(){
   $('new-meter').addEventListener('change',()=>{updatePrevious();updateLive();});
   for(const id of ['reading-date','whole-reading','decimal-reading'])$(id).addEventListener('input',()=>{updatePrevious();updateLive();});
   $('reading-photo').addEventListener('change',e=>{
-    const file=e.target.files[0];$('ocr-button').disabled=!file;$('ocr-status').textContent='';if(!file){$('photo-preview').hidden=true;return;}
+    const file=e.target.files[0];if(!file){$('photo-preview').hidden=true;return;}
     const img=$('preview-image');if(img.dataset.objecturl)URL.revokeObjectURL(img.dataset.objecturl);
     img.dataset.objecturl=URL.createObjectURL(file);img.src=img.dataset.objecturl;$('photo-preview').hidden=false;
   });
@@ -529,7 +699,6 @@ function bindEvents(){
     $('reading-form').closest('.panel').hidden=false;$('after-save').hidden=true;
     $('reading-date').value=localDate();updatePrevious();updateLive();
   });
-  $('ocr-button').addEventListener('click',guard(assistOcr));
   $('history-list').addEventListener('click',guard(async e=>{
     const button=e.target.closest('button[data-action]');if(!button)return;
     const row=state.readings.find(r=>r.id===button.dataset.id);if(!row)return;
@@ -538,6 +707,22 @@ function bindEvents(){
     if(button.dataset.action==='edit')openEdit(row);
   }));
   $('export-csv').addEventListener('click',guard(async()=>exportCSV()));
+  $('export-pdf').addEventListener('click',guard(exportPDF));
+  $('historical-form').addEventListener('submit',guard(saveHistorical));
+  $('historical-preview-button').addEventListener('click',guard(showHistoricalPreview));
+  $('historical-append').addEventListener('click',guard(()=>{
+    if(state.previewWorker)throw Error('Saia da visualização para importar leituras.');
+    const date=$('historical-quick-date').value;
+    const value=$('historical-quick-value').value.trim();
+    if(!date||!value)throw Error('Informe data e leitura.');
+    const newLine=`${date};${value}`;
+    parseHistoricalText(newLine); // validate before appending
+    const field=$('historical-paste');field.value+=(field.value.trim()?'\n':'')+newLine;
+    $('historical-quick-date').value='';$('historical-quick-value').value='';
+    clearHistoricalPreview();toast('Leitura incluída. Confira e salve o histórico quando terminar.');
+  }));
+  $('historical-meter').addEventListener('change',clearHistoricalPreview);
+  $('historical-paste').addEventListener('input',clearHistoricalPreview);
   $('meter-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();if(!isManager())throw Error('Sem permissão.');
     const {error}=await state.db.from('meters').insert({condominium_id:state.condo.id,name:$('meter-name').value.trim()});
@@ -584,31 +769,37 @@ function applyTheme(theme){
 }
 function cycleTheme(){applyTheme(state.theme==='auto'?'dark':state.theme==='dark'?'light':'auto');}
 function showTutorial(){
-  const worker=state.profile==='zelador'||state.role==='zelador';
+  const worker=viewWorker()||(state.profile==='zelador'&&!state.role);
   const support=state.profile==='suporte';
   const lines=worker?[
     'Abra o link pessoal recebido do(a) síndico(a) e entre com sua conta.',
     'Toque em Foto do visor e fotografe a leitura acumulada do hidrômetro (m³).',
     'Confira a parte inteira e os 3 decimais. A linha m³/h NÃO é o consumo acumulado.',
     'Toque em Salvar medição. Depois, se quiser, compartilhe o relatório com foto.',
-    'O registro aparece automaticamente no painel do(a) síndico(a).'
+    'O registro aparece automaticamente no painel do(a) síndico(a).',
+    'Para adicionar leituras antigas sem foto, abra Histórico antigo: informe data e valor, toque em Adicionar e confirme a lista antes de salvar.',
+    'Use Condomínios para trocar de local sem sair da conta. Cada condomínio mantém seus próprios registros.'
   ]:support?[
     'Peça ao(à) síndico(a) um link temporário de suporte.',
     'Abra o link usando sua conta técnica autorizada e ative a sessão.',
     'Consulte o painel e corrija medições com motivo documentado.',
-    'O acesso termina em até 90 minutos ou antes, caso seja revogado.'
+    'O acesso termina em até 90 minutos ou antes, caso seja revogado.',
+    'Use Condomínios para trocar entre sessões autorizadas. Ver como zelador(a) mostra uma prévia sem salvar dados.'
   ]:[
     'Crie seu condomínio ao entrar pela primeira vez.',
     'Em Ajustes, gere um link individual de ativação para cada zelador(a).',
     'Registre a primeira leitura histórica como referência, se necessário.',
     'Acompanhe o painel, gráficos, fotos e histórico das medições.',
-    'Gere um link de suporte temporário apenas quando precisar de assistência; revogue-o depois.'
+    'Gere um link de suporte temporário apenas quando precisar de assistência; revogue-o depois.',
+    'Use Condomínios para administrar vários com o mesmo e-mail e Ver como zelador(a) para simular o fluxo sem alterar dados.',
+    'Em Histórico antigo, informe data e leitura ou cole várias linhas antigas sem fotos. Confira a prévia e confirme.',
+    'No Histórico, exporte PDF completo com as fotos disponíveis e um resumo por hidrômetro.'
   ];
   $('tutorial-body').innerHTML=`<ol>${lines.map(line=>`<li>${escapeHtml(line)}</li>`).join('')}</ol><p class="help">O relatório com foto está sujeito às opções de compartilhamento do navegador. Se necessário, baixe o PNG e anexe no WhatsApp.</p>`;
   if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
 }
 function showTutorialOnce(){
-  const key=`hc_tutorial_v020_${state.role}`;
+  const key=`hc_tutorial_v030_${state.role}`;
   if(!localStorage.getItem(key)){localStorage.setItem(key,'1');showTutorial();}
 }
 applyTheme(localStorage.getItem('hidrocondo_theme')||'auto');

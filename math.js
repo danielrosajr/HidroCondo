@@ -58,20 +58,3 @@ export function fmtDate(iso) {
   return `${d}/${m}/${y}`;
 }
 
-export function parseOcrCandidates(text) {
-  // Aceita 4064.959 e 4.064,959; não confunde a vazão 0.000 m³/h.
-  const pattern = /(?:^|[^\d])((?:\d{1,3}[.,])?\d{3,7})[.,](\d{1,3})(?!\d)/g;
-  const matches = [...String(text||'').matchAll(pattern)];
-  const candidates = [];
-  for (const match of matches) {
-    try {
-      const whole = Number(match[1].replace(/[.,]/g,''));
-      const decimals = Number(match[2].padEnd(3,'0'));
-      if (whole <= 999999999 && Number.isSafeInteger(whole)) {
-        const value = whole * 1000 + decimals;
-        if (!candidates.includes(value)) candidates.push(value);
-      }
-    } catch {}
-  }
-  return candidates;
-}

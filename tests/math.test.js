@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseWholeMeter, parseDecimalMeter, readValue, diffDays, buildIntervals, analyzeLatest, formatM3, parseOcrCandidates} from '../math.js';
+import {parseWholeMeter, parseDecimalMeter, readValue, diffDays, buildIntervals, analyzeLatest, formatM3} from '../math.js';
 test('milhar brasileiro e inteiro sem pontos são equivalentes', () => {
   assert.equal(parseWholeMeter('4.064'), 4064);
   assert.equal(parseWholeMeter('4064'), 4064);
@@ -29,7 +29,4 @@ test('não emite alerta com só uma semana de dados', ()=>{
   ])).alert, false);
 });
 
-test('OCR identifica leitura acumulada, inclusive notação brasileira, e ignora vazão m³/h', ()=>{
-  assert.deepEqual(parseOcrCandidates('4064.959 m3\n0.000 m3/h'), [4064959]);
-  assert.deepEqual(parseOcrCandidates('4.064,959 m³\n0,000 m³/h'), [4064959]);
-});
+

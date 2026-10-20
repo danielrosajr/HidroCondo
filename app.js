@@ -2,10 +2,11 @@ import {parseWholeMeter, parseDecimalMeter, readValue, toMillis, toM3String, for
 import {getWaterInsights} from './analysis.js';
 import {parseHistoricalText,previewHistorical} from './historical.js';
 import {mayCreateCondo,maySubmitHistory,mayApproveHistory} from './permissions.js';
+import {compressPhoto,formatPhotoBytes} from './photos.js';
 
 const $ = id => document.getElementById(id);
 const STORE = 'hidrocondo-fotos';
-const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null,historyRequests:[],platformCreator:false};
+const state = {db:null,user:null,member:null,condo:null,role:null,profile:null,meters:[],readings:[],audits:[],tab:'dashboard',meterId:null,authMode:'login',busy:false,lastSaved:null,theme:'auto',workspaces:[],pickerOpen:false,previewWorker:false,pendingHistory:null,historyRequests:[],platformCreator:false,currentPhoto:null,historyPhotos:new Map()};
 const canCorrect = ()=>(state.role==='sindica'||state.role==='suporte')&&!state.previewWorker;
 const isManager = ()=>state.role==='sindica';
 const canCreateCondo = ()=>mayCreateCondo(state.profile,state.platformCreator);
@@ -220,7 +221,7 @@ function renderDashboard(){
   const rid=latest.id;
   signedPhoto(latest.photo_path).then(url=>{
     if(!document.querySelector('#dash-photo-box') || getIntervals().at(-1)?.id!==rid)return;
-    $('dash-photo-box').innerHTML=url?`<img class="latest-photo" alt="Foto do hidrômetro" src="${escapeHtml(url)}">`:'<div class="notice">Leitura inicial sem foto</div>';
+    $('dash-photo-box').innerHTML=url?`<img class="latest-photo" alt="Foto do hidrômetro" src="${escapeHtml(url)}">`:'<div class="notice">Esta medição não possui foto</div>';
   }).catch(()=>{if($('dash-photo-box'))$('dash-photo-box').textContent='Não foi possível carregar a foto.';});
 }
 function renderHistory(){
@@ -230,7 +231,7 @@ function renderHistory(){
   const correctedIds=new Set(state.audits.map(a=>a.reading_id));
   $('history-list').innerHTML=intervals.map(row=>`<article class="history-row"><div>
     <strong>${fmtDate(row.measured_on)} — ${formatM3(toMillis(row.value_m3))} m³</strong>
-    ${correctedIds.has(row.id)?'<span class="pill">Corrigida</span>':''} ${row.entry_kind==='historical'?'<span class="pill">Histórico sem foto</span>':''}
+    ${correctedIds.has(row.id)?'<span class="pill">Corrigida</span>':''} ${row.entry_kind==='historical'?'<span class="pill">Histórico manual</span>':''}
     <div class="history-meta">${row.previous?`Consumo: ${formatM3(row.consumed)} m³ em ${row.days} dias`:'Leitura de referência (sem consumo calculado)'}</div>
     <div class="history-meta">Registrado por ${escapeHtml(row.registered_by_name)} ${row.photo_path?'· com foto':'· sem foto'}</div>
   </div><div class="history-actions">
@@ -262,15 +263,39 @@ function updateLive(){
     output.textContent=`Resultado: ${formatM3(difference)} m³ consumidos em ${days} dia(s). Média: ${formatM3(Math.round(difference/days))} m³/dia.`;
   }catch(e){output.textContent=e.message.includes('parte inteira')?'Preencha a parte inteira para visualizar o cálculo.':e.message;}
 }
-function fileToBitmap(file){return new Promise((resolve,reject)=>{const image=new Image(),url=URL.createObjectURL(file);image.onload=()=>{URL.revokeObjectURL(url);resolve(image);};image.onerror=()=>{URL.revokeObjectURL(url);reject(Error('Foto inválida ou não suportada.'));};image.src=url;});}
-async function compressImage(file){
-  if(!file.type.startsWith('image/'))throw Error('Escolha uma imagem válida.');
-  if(file.size>20*1024*1024)throw Error('Foto muito grande (máximo 20 MB antes da compressão).');
-  const img=await fileToBitmap(file);
-  const max=1600,ratio=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
-  const cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(img.naturalWidth*ratio));cv.height=Math.max(1,Math.round(img.naturalHeight*ratio));
-  cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
-  return new Promise((resolve,reject)=>cv.toBlob(b=>b?resolve(b):reject(Error('Não foi possível processar a foto.')),'image/webp',.84));
+function clearReadingPhoto(){
+  if(state.currentPhoto?.url)URL.revokeObjectURL(state.currentPhoto.url);
+  state.currentPhoto=null;
+  for(const id of ['reading-camera','reading-gallery'])$(id).value='';
+  $('photo-preview').hidden=true;
+  $('preview-image').removeAttribute('src');
+  $('reading-photo-status').textContent='';
+}
+function setReadingPhoto(file){
+  if(!file)return;
+  if(!file.type.startsWith('image/'))throw Error('Escolha uma foto válida.');
+  clearReadingPhoto();
+  const url=URL.createObjectURL(file);
+  state.currentPhoto={file,url};
+  $('preview-image').src=url;
+  $('reading-photo-status').textContent=`${file.name || 'Foto selecionada'} · ${formatPhotoBytes(file.size)} antes da compressão`;
+  $('photo-preview').hidden=false;
+}
+function resetHistoricalPhotos(){
+  for(const entry of state.historyPhotos.values())URL.revokeObjectURL(entry.url);
+  state.historyPhotos.clear();
+}
+async function uploadPhoto(file){
+  const blob=await compressPhoto(file);
+  const path=`${state.condo.id}/${state.user.id}/${makeUUID()}.webp`;
+  const {error}=await state.db.storage.from(STORE).upload(path,blob,{contentType:'image/webp',upsert:false});
+  if(error)throw error;
+  return {path,size:blob.size};
+}
+async function cleanupUploads(paths){
+  if(!paths.length)return;
+  const {error}=await state.db.storage.from(STORE).remove(paths);
+  if(error)console.warn('Não foi possível eliminar uploads incompletos:',error);
 }
 async function saveReading(e){
   e.preventDefault();if(state.previewWorker)throw Error('Modo de visualização: não é possível salvar.');const btn=$('save-reading');setBusy(btn,true,'Salvando...');
@@ -286,19 +311,17 @@ async function saveReading(e){
     const next=rows.find(r=>r.measured_on>date);
     if(previous && value<toMillis(previous.value_m3))throw Error('Leitura menor que a anterior: confira o visor.');
     if(next && value>toMillis(next.value_m3))throw Error('Leitura maior que a posterior: confira o visor.');
-    const photo=$('reading-photo').files?.[0];
+    const photo=state.currentPhoto?.file;
     if(!photo && !(state.role==='sindica' && rows.length===0))throw Error('Anexe a foto do hidrômetro.');
     if(photo){
-      const blob=await compressImage(photo);
-      uploaded=`${state.condo.id}/${state.user.id}/${makeUUID()}.webp`;
-      const upload=await state.db.storage.from(STORE).upload(uploaded,blob,{contentType:'image/webp',upsert:false});
-      if(upload.error)throw upload.error;
+      const result=await uploadPhoto(photo);uploaded=result.path;
+      toast(`Foto preparada: ${formatPhotoBytes(photo.size)} → ${formatPhotoBytes(result.size)}. Salvando medição...`);
     }
     const insert=await state.db.from('readings').insert({condominium_id:state.condo.id,meter_id:meterId,
       measured_on:date,value_m3:toM3String(value),photo_path:uploaded,created_by:state.user.id,
       registered_by_name:userDisplayName()}).select().single();
     if(insert.error)throw insert.error;
-    $('reading-form').reset();$('reading-date').value=localDate();$('photo-preview').hidden=true;uploaded=null;
+    $('reading-form').reset();$('reading-date').value=localDate();clearReadingPhoto();uploaded=null;
     toast('Medição salva! O(a) síndico(a) já pode consultar.');
     state.meterId=meterId;state.lastSaved=insert.data;await loadData();setTab('new');
     cachedReport(insert.data).catch(console.warn);
@@ -309,7 +332,7 @@ async function saveReading(e){
     $('reading-form').closest('.panel').hidden=true;
     $('after-save').hidden=false;
   }catch(err){
-    if(uploaded)await state.db.storage.from(STORE).remove([uploaded]).catch(()=>{});
+    if(uploaded)await cleanupUploads([uploaded]);
     throw err;
   }finally{setBusy(btn,false);}
 }
@@ -404,7 +427,7 @@ async function renderReportImage(row){
     const img=await fileToBitmap(blob);const scale=Math.min(pw/img.naturalWidth,ph/img.naturalHeight);
     const w=img.naturalWidth*scale,h=img.naturalHeight*scale;
     ctx.drawImage(img,px+(pw-w)/2,py+(ph-h)/2,w,h);
-  }else paintText(ctx,'Leitura inicial cadastrada sem foto',116,1340,'26px system-ui','#667d85');
+  }else paintText(ctx,'Esta medição não possui fotografia',116,1340,'26px system-ui','#667d85');
   paintText(ctx,`Registrado por: ${row.registered_by_name.slice(0,44)}`,82,1612,'22px system-ui','#607783');
   paintText(ctx,'Comparações são informativas, não diagnosticam vazamento.',82,1650,'20px system-ui','#83949b');
   return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('Falha ao gerar relatório.')),'image/png'));
@@ -485,9 +508,31 @@ function showHistoricalPreview(){
     'Uma leitura de referência, sem consumo para o período.':
     `Entre a primeira e a última leitura importada: ${formatM3(summary.total)} m³ em ${summary.days} dia(s).`;
   box.append(info);
-  const note=document.createElement('strong');note.textContent=state.role==='zelador'
-    ?'Sem foto: o histórico será ENVIADO PARA APROVAÇÃO. Ele só aparecerá nos cálculos após o(a) síndico(a) aprovar.'
-    :'Atenção: esses dados serão marcados como históricos SEM foto. Confira os valores antes de salvar.';box.append(note);
+  const validDates=new Set(rows.map(row=>row.measured_on));
+  for(const [day,attachment] of state.historyPhotos){
+    if(!validDates.has(day)){URL.revokeObjectURL(attachment.url);state.historyPhotos.delete(day);}
+  }
+  const note=document.createElement('p');note.textContent=state.role==='zelador'
+    ?'Escolha fotos opcionais por data. Após enviar, o(a) síndico(a) deverá aprovar as leituras para incluí-las no histórico oficial.'
+    :'Você pode escolher fotos opcionais por data. Confira os números antes de salvar.';
+  box.append(note);
+  const list=document.createElement('div');list.className='historical-photo-list';
+  list.innerHTML=rows.map(row=>{
+    const attach=state.historyPhotos.get(row.measured_on);
+    const day=row.measured_on;
+    return `<section class="historical-photo-row" aria-label="Foto opcional da medição ${escapeHtml(fmtDate(day))}">
+      <div class="historical-photo-main"><strong>${escapeHtml(fmtDate(day))} — ${formatM3(row.milli)} m³</strong>
+      <span class="historical-photo-meta">${attach?'Foto selecionada · '+formatPhotoBytes(attach.file.size):'Sem foto — opcional'}</span></div>
+      <div class="photo-choices">
+        <label class="btn btn-secondary photo-choice" for="hist-camera-${day}">📷 Câmera</label>
+        <input type="file" class="visually-hidden-file" id="hist-camera-${day}" data-historical-date="${day}" accept="image/*" capture="environment" aria-label="Câmera para a medição de ${escapeHtml(fmtDate(day))}">
+        <label class="btn btn-ghost photo-choice" for="hist-gallery-${day}">🖼 Galeria</label>
+        <input type="file" class="visually-hidden-file" id="hist-gallery-${day}" data-historical-date="${day}" accept="image/*" aria-label="Galeria para a medição de ${escapeHtml(fmtDate(day))}">
+      </div>
+      ${attach?`<div class="historical-photo-attachments"><img src="${escapeHtml(attach.url)}" class="historical-photo-thumb" alt="Foto escolhida para ${escapeHtml(fmtDate(day))}"><button type="button" class="btn btn-ghost btn-small" data-remove-history-photo="${day}">Remover foto</button></div>`:''}
+    </section>`;
+  }).join('');
+  box.append(list);
   state.pendingHistory={meterId,rows,text:$('historical-paste').value};
   $('historical-submit').disabled=false;
 }
@@ -498,27 +543,41 @@ async function saveHistorical(e){
     throw Error('Revise o histórico antes de confirmar.');
   previewHistorical(pending.rows,meterReadings(pending.meterId),localDate());
   const btn=$('historical-submit');setBusy(btn,true,state.role==='zelador'?'Enviando pedido...':'Gravando histórico...');
+  const uploaded=[];
   try{
+    // Photos are uploaded after local chronological validation and before saving the batch.
+    // If either the RPC or insert fails, clean up newly uploaded photos.
+    const pathsByDate=new Map();
+    for(const row of pending.rows){
+      const attachment=state.historyPhotos.get(row.measured_on);
+      if(!attachment)continue;
+      const photo=await uploadPhoto(attachment.file);
+      uploaded.push(photo.path);
+      pathsByDate.set(row.measured_on,photo.path);
+    }
     const payload=pending.rows.map(r=>({condominium_id:state.condo.id,meter_id:pending.meterId,
-      measured_on:r.measured_on,value_m3:toM3String(r.milli),photo_path:null,entry_kind:'historical',
+      measured_on:r.measured_on,value_m3:toM3String(r.milli),photo_path:pathsByDate.get(r.measured_on)||null,entry_kind:'historical',
       created_by:state.user.id,registered_by_name:userDisplayName()}));
     if(maySubmitHistory(state.role)){
-      const entries=payload.map(row=>({measured_on:row.measured_on,value_m3:row.value_m3}));
+      const entries=payload.map(row=>({measured_on:row.measured_on,value_m3:row.value_m3,photo_path:row.photo_path}));
       const {error}=await state.db.rpc('hc_submit_historical',{
         p_condo:state.condo.id,p_meter:pending.meterId,p_entries:entries,p_name:userDisplayName()
       });
       if(error)throw error;
-      clearHistoricalPreview();$('historical-paste').value='';await loadData();
+      uploaded.length=0;
+      clearHistoricalPreview();resetHistoricalPhotos();$('historical-paste').value='';await loadData();
       toast(`${payload.length} leituras enviadas! Aguardando aprovação do(a) síndico(a).`);
       setTab('import');
     }else{
       // One SQL insert statement: if any row fails the transaction is rolled back.
       const {error}=await state.db.from('readings').insert(payload);if(error)throw error;
-      clearHistoricalPreview();$('historical-paste').value='';await loadData();
+      uploaded.length=0;
+      clearHistoricalPreview();resetHistoricalPhotos();$('historical-paste').value='';await loadData();
       toast(`${payload.length} leituras históricas salvas com sucesso.`);
       setTab('history');
     }
-  }finally{setBusy(btn,false);}
+  }catch(error){await cleanupUploads(uploaded);throw error;}
+  finally{setBusy(btn,false);}
 }
 
 function renderHistoryRequests(){
@@ -547,7 +606,7 @@ function renderHistoryRequests(){
       <div class="pending-card-heading"><strong>${escapeHtml(meter)}</strong><span class="pill">${escapeHtml(status)}</span></div>
       <p class="history-meta">${escapeHtml(r.submitted_by_name)} · ${new Date(r.created_at).toLocaleString('pt-BR')} · ${rows.length} leitura(s)</p>
       ${r.review_note?`<p class="history-meta">Motivo: ${escapeHtml(r.review_note)}</p>`:''}
-      <details><summary>Conferir todas as leituras (${rows.length})</summary><div class="submitted-rows">${rows.map(row=>`<div><span>${escapeHtml(fmtDate(row.measured_on))}</span><strong>${escapeHtml(formatM3(toMillis(row.value_m3)))} m³</strong></div>`).join('')}</div></details>
+      <details><summary>Conferir todas as leituras (${rows.length})</summary><div class="submitted-rows">${rows.map(row=>`<div class="submitted-row-line"><span>${escapeHtml(fmtDate(row.measured_on))}</span><strong>${escapeHtml(formatM3(toMillis(row.value_m3)))} m³</strong>${row.photo_path?`<button type="button" class="btn btn-ghost btn-small" data-history-photo="${escapeHtml(row.photo_path)}">Ver foto</button>`:'<small>Sem foto</small>'}</div>`).join('')}</div></details>
       ${buttons}
     </article>`;
   }).join('');
@@ -662,7 +721,7 @@ async function exportPDF(){
         write(row.previous?
           `Anterior: ${formatM3(toMillis(row.previous.value_m3))} m³ | Consumo: ${formatM3(row.consumed)} m³ em ${row.days} dia(s)`:
           'Leitura de referência: não existe consumo anterior para calcular.',{size:9});
-        write(`Responsável: ${row.registered_by_name} | Tipo: ${row.entry_kind==='historical'?'Histórico manual sem foto':'Leitura regular'}` ,{size:9});
+        write(`Responsável: ${row.registered_by_name} | Tipo: ${row.entry_kind==='historical'?'Histórico manual':'Leitura regular'} | Foto: ${row.photo_path?'Sim':'Não'}` ,{size:9});
         if(row.correction_note)write(`Correção registrada: ${row.correction_note}`,{size:9});
         if(row.photo_path){
           // Do not silently deliver an incomplete "complete PDF" on a storage error.
@@ -724,10 +783,10 @@ function bindEvents(){
     e.preventDefault();const role=document.querySelector('input[name="legacy-role"]:checked').value;
     const {error}=await state.db.rpc('hc_choose_profile',{p_role:role});if(error)throw error;await bootstrap();
   }));
-  const signOut=guard(async()=>{const {error}=await state.db.auth.signOut();if(error)throw error;state.member=null;state.condo=null;state.meters=[];state.readings=[];screens('auth');});
+  const signOut=guard(async()=>{const {error}=await state.db.auth.signOut();if(error)throw error;clearReadingPhoto();resetHistoricalPhotos();state.pendingHistory=null;state.member=null;state.condo=null;state.meters=[];state.readings=[];screens('auth');});
   $('logout').addEventListener('click',signOut);
   $('onboard-logout').addEventListener('click',signOut);
-  function showWorkspacePicker(){state.previewWorker=false;state.pickerOpen=true;state.condo=null;state.meters=[];state.readings=[];state.historyRequests=[];state.lastSaved=null;state.pendingHistory=null;reportCache.clear();bootstrap().catch(err=>toast(apiError(err),true));}
+  function showWorkspacePicker(){clearReadingPhoto();resetHistoricalPhotos();state.previewWorker=false;state.pickerOpen=true;state.condo=null;state.meters=[];state.readings=[];state.historyRequests=[];state.lastSaved=null;state.pendingHistory=null;reportCache.clear();bootstrap().catch(err=>toast(apiError(err),true));}
   $('switch-condo').addEventListener('click',showWorkspacePicker);
   $('settings-switch-condo').addEventListener('click',showWorkspacePicker);
   $('workspace-list').addEventListener('click',guard(async e=>{
@@ -759,11 +818,10 @@ function bindEvents(){
   for(const id of ['dash-meter','history-meter'])$(id).addEventListener('change',e=>{state.meterId=e.target.value;renderMeters();renderDashboard();renderHistory();});
   $('new-meter').addEventListener('change',()=>{updatePrevious();updateLive();});
   for(const id of ['reading-date','whole-reading','decimal-reading'])$(id).addEventListener('input',()=>{updatePrevious();updateLive();});
-  $('reading-photo').addEventListener('change',e=>{
-    const file=e.target.files[0];if(!file){$('photo-preview').hidden=true;return;}
-    const img=$('preview-image');if(img.dataset.objecturl)URL.revokeObjectURL(img.dataset.objecturl);
-    img.dataset.objecturl=URL.createObjectURL(file);img.src=img.dataset.objecturl;$('photo-preview').hidden=false;
-  });
+  for(const id of ['reading-camera','reading-gallery'])$(id).addEventListener('change',guard(async e=>{
+    if(e.target.files?.[0])setReadingPhoto(e.target.files[0]);
+  }));
+  $('reading-photo-remove').addEventListener('click',clearReadingPhoto);
   $('reading-form').addEventListener('submit',guard(saveReading));
   $('after-save-share').addEventListener('click',guard(async()=>{
     if(state.lastSaved)await shareReport(state.lastSaved,false);
@@ -783,10 +841,29 @@ function bindEvents(){
   $('export-pdf').addEventListener('click',guard(exportPDF));
   $('historical-form').addEventListener('submit',guard(saveHistorical));
   $('history-requests-list').addEventListener('click',guard(async e=>{
+    const photo=e.target.closest('button[data-history-photo]');
+    if(photo){await viewPhoto({photo_path:photo.dataset.historyPhoto});return;}
     const button=e.target.closest('button[data-history-action]');if(!button)return;
     await reviewHistory(button.dataset.historyId,button.dataset.historyAction==='approve');
   }));
   $('historical-preview-button').addEventListener('click',guard(showHistoricalPreview));
+  $('historical-preview').addEventListener('change',guard(async e=>{
+    const input=e.target.closest('input[data-historical-date]');if(!input?.files?.[0])return;
+    const file=input.files[0];
+    if(!file.type.startsWith('image/'))throw Error('Escolha uma fotografia válida.');
+    if(file.size>30*1024*1024)throw Error('Esta foto ultrapassa 30 MB. Escolha outra.');
+    const day=input.dataset.historicalDate,old=state.historyPhotos.get(day);
+    if(old)URL.revokeObjectURL(old.url);
+    state.historyPhotos.set(day,{file,url:URL.createObjectURL(file)});
+    showHistoricalPreview();
+  }));
+  $('historical-preview').addEventListener('click',guard(async e=>{
+    const button=e.target.closest('button[data-remove-history-photo]');if(!button)return;
+    const old=state.historyPhotos.get(button.dataset.removeHistoryPhoto);
+    if(old)URL.revokeObjectURL(old.url);
+    state.historyPhotos.delete(button.dataset.removeHistoryPhoto);
+    showHistoricalPreview();
+  }));
   $('historical-append').addEventListener('click',guard(()=>{
     if(state.previewWorker)throw Error('Saia da visualização para importar leituras.');
     const date=$('historical-quick-date').value;
@@ -798,7 +875,7 @@ function bindEvents(){
     $('historical-quick-date').value='';$('historical-quick-value').value='';
     clearHistoricalPreview();toast('Leitura incluída. Confira e salve o histórico quando terminar.');
   }));
-  $('historical-meter').addEventListener('change',clearHistoricalPreview);
+  $('historical-meter').addEventListener('change',()=>{clearHistoricalPreview();resetHistoricalPhotos();});
   $('historical-paste').addEventListener('input',clearHistoricalPreview);
   $('meter-form').addEventListener('submit',guard(async e=>{
     e.preventDefault();if(!isManager())throw Error('Sem permissão.');
@@ -850,11 +927,11 @@ function showTutorial(){
   const support=state.profile==='suporte';
   const lines=worker?[
     'Abra o link pessoal recebido do(a) síndico(a) e entre com sua conta.',
-    'Toque em Foto do visor e fotografe a leitura acumulada do hidrômetro (m³).',
+    'Em Nova leitura, toque em Tirar foto ou Escolher da galeria. Confira a foto do visor antes de salvar.',
     'Confira a parte inteira e os 3 decimais. A linha m³/h NÃO é o consumo acumulado.',
     'Toque em Salvar medição. Depois, se quiser, compartilhe o relatório com foto.',
     'O registro aparece automaticamente no painel do(a) síndico(a).',
-    'Para adicionar leituras antigas sem foto, abra Histórico antigo: informe data e valor, toque em Adicionar e ENVIE PARA APROVAÇÃO do(a) síndico(a).',
+    'Em Histórico antigo, informe data e leitura; toque em Conferir histórico e, se desejar, escolha uma foto para cada data. Fotos são opcionais. Depois, envie para aprovação do(a) síndico(a).',
     'Em Histórico antigo, acompanhe se seu envio está aguardando, aprovado ou rejeitado. Pedidos pendentes não mudam os gráficos.',
     'Use Condomínios para trocar de local sem sair da conta. Cada condomínio mantém seus próprios registros.'
   ]:support?[
@@ -870,7 +947,7 @@ function showTutorial(){
     'Acompanhe o painel, gráficos, fotos e histórico das medições.',
     'Gere um link de suporte temporário apenas quando precisar de assistência; revogue-o depois.',
     'Use Condomínios para administrar vários com o mesmo e-mail e Ver como zelador(a) para simular o fluxo sem alterar dados.',
-    'Em Histórico antigo, informe data e leitura ou cole várias linhas antigas sem fotos. Confira a prévia e confirme.',
+    'Em Histórico antigo, informe data e leitura ou cole várias linhas; confira a prévia e escolha fotos opcionais por data, da câmera ou da galeria.',
     'Os históricos enviados por zeladores ficam na fila Históricos aguardando aprovação. Confira as datas e valores antes de aprovar ou justifique a rejeição.',
     'No Histórico, exporte PDF completo com as fotos disponíveis e um resumo por hidrômetro.'
   ];
@@ -878,7 +955,7 @@ function showTutorial(){
   if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
 }
 function showTutorialOnce(){
-  const key=`hc_tutorial_v040_${state.role}`;
+  const key=`hc_tutorial_v050_${state.role}`;
   if(!localStorage.getItem(key)){localStorage.setItem(key,'1');showTutorial();}
 }
 applyTheme(localStorage.getItem('hidrocondo_theme')||'auto');

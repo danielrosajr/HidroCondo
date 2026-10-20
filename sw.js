@@ -1,6 +1,6 @@
 // Offline: apenas o shell visual. Gravação e consulta exigem internet.
-const CACHE = 'hidrocondo-shell-v0.4.0';
-const STATIC = ['./','./index.html','./styles.css','./app.js','./math.js','./analysis.js','./historical.js','./permissions.js','./manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png'];
+const CACHE = 'hidrocondo-shell-v0.5.0';
+const STATIC = ['./','./index.html','./styles.css','./app.js','./math.js','./analysis.js','./historical.js','./permissions.js','./photos.js','./manifest.webmanifest','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)).then(()=>self.skipWaiting()));
 });

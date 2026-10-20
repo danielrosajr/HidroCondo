@@ -1,104 +1,61 @@
-# HidroCondo v0.4.0-beta
+# HidroCondo v0.5.0-beta
 
-Mobile-first condominium water meter PWA, hosted on GitHub Pages with Supabase (Auth + PostgreSQL RLS + private Storage). User-facing app and tutorial are in Portuguese; engineering documentation and GitHub releases are in English.
+A mobile-first condominium water meter PWA, built with static HTML/CSS/JavaScript and Supabase PostgreSQL, Auth, RLS and private Storage. The in-app experience and help are written in Brazilian Portuguese. Technical docs and GitHub releases are in English.
 
-## Upgrade from v0.3.0-beta
+## What's new
 
-**Back up your Supabase database and Storage photos. Test in a non-production project first.** This version is an additive migration: no condominium, member, reading or image is deleted.
+- **Current readings:** two clearly labeled options — **Take photo** (`capture="environment"`) and **Choose from gallery** (without `capture`). Both attach photo proof to the same measurement. A worker's current reading still requires a photograph; managers retain the existing first-reading exception.
+- **Historical readings:** optional photograph **per date**, directly inside the confirmation preview, from the camera or gallery. This works for managers saving history and for workers submitting a batch for manager approval. Dates without photos remain valid.
+- **Reduced image size:** before upload, photos are resized locally without upscaling and encoded to WebP. Processing starts at **2048 px maximum edge and quality 0.88**, with progressively smaller high-legibility options if the image exceeds a **~1.3 MB soft target**. The final image must remain **under the 5 MB Storage bucket limit**. The original photo is not overwritten on the phone. Pixel details, size and browser compatibility affect actual compression; no fixed savings can be promised. Original files above 30 MB are rejected.
+- **Approval & exports:** photos attached to worker submissions remain private, visible to the manager reviewing the request, and are linked to the official reading after approval. Existing PDF and image reports include the associated images. Records without a photograph are explicitly identified.
+- Updated the Portuguese in-app tutorial for these flows; workers still cannot approve their own submissions.
 
-1. In Supabase **SQL Editor**, run **`sql/upgrade_0_4_0.sql`** once, after `upgrade_0_2_0.sql` and `upgrade_0_3_0.sql`. Do **not** re-run `setup.sql` on an existing project.
-2. If you are the *platform support administrator* and need to create new condominiums, enable that explicitly for **your support account only**, following the SQL below. A regular `sindico` account does not need this grant.
-3. Upload the updated application files to the branch from which GitHub Pages deploys (usually `main`). **Never replace your configured `config.js` or put a secret/service-role key on the website**.
-4. Wait for Pages deployment and reload the PWA (service worker shell cache bumped to `v0.4.0`). Test with disposable condominiums and separate manager/worker accounts before importing real data.
+## Upgrade from v0.4.0-beta (in this order)
 
-## Diagnose the 403 when creating a condominium
+1. **Back up the existing Supabase database and Storage photos.** Run the migration on a test project first, if available.
+2. Open **Supabase → SQL Editor** and execute `sql/upgrade_0_5_0.sql` **after** migrations `upgrade_0_2_0.sql`, `upgrade_0_3_0.sql` and `upgrade_0_4_0.sql`. This migration replaces the historical submission/review RPCs and the `reading_create` policy. **Do not execute `setup.sql` again.** No existing tables or photographs are deleted.
+3. Update the static site files in the GitHub Pages deployment branch (typically `main`): **replace** `app.js`, `index.html`, `styles.css`, `sw.js`, `package.json`, `README.md`, `RELEASE_NOTES.md`; **add** `photos.js`, `sql/upgrade_0_5_0.sql`, `tests/photos.test.js`.
+4. **Preserve your existing `config.js`** (with your project's public/publishable key and URL). This archive deliberately does not include your configured `config.js`. Do not upload any Supabase service-role/secret keys to the website.
+5. Commit, wait for GitHub Pages, then **reload the PWA**. The service worker cache name changes to `hidrocondo-shell-v0.5.0` to refresh the static files. On some phones, close and reopen the installed app.
 
-The error `42501: new row violates row-level security policy for table "condominiums"` means the insert was rejected by **RLS**. It is unrelated to the separately logged `42P01` missing `supabase_migrations.schema_migrations` relation during a migration-version inspection.
+The archive contains the full application baseline, except your `config.js`; if you upload the archive's files, **keep directories in place** (`icons/`, `sql/`, `tests/`). The archive is not itself a GitHub Pages deployable ZIP unless you extract and upload its contents.
 
-Possible causes in v0.3:
+### Existing data and permissions
 
-- The account has `account_type='suporte'`. A support account is not automatically authorized to create condominiums.
-- The Supabase database still has an older `condo_create` policy prohibiting creation when a manager already belongs to a condominium; the 0.4 migration replaces it.
+- No existing readings, memberships, invitations or photos are deleted by this migration.
+- Current readings keep the existing worker-photo requirement and initial-manager-reading exception.
+- Historical readings remain in chronological order and must not decrease across adjacent dates.
+- Workers **submit** historical batches; they **cannot** insert approved historical readings directly. A manager must approve or reject each batch.
+- Worker photo paths are validated by a SECURITY DEFINER RPC: only the logged-in worker's files inside the current condominium, in the `hidrocondo-fotos` bucket, may be attached. The RPC also checks that the objects exist. The manager approval RPC rechecks ownership/object existence before committing all readings atomically.
+- Manager-entered historical photos have the same condominiums/auth UID prefix restriction in the `reading_create` RLS policy.
+- Approved photos remain subject to the private Supabase Storage policies. A rejected batch retains its private photo references for audit; unused uploaded files may require a later retention/cleanup policy.
+- If a historical batch fails to save after photo upload, the frontend attempts to delete the newly uploaded files. In rare network failures, orphaned Storage objects may remain and require administrative cleanup.
 
-**Inspect the profile of the affected account.** In Supabase SQL Editor (trusted administrative context), replace the sample email:
+## Photo compatibility and performance
 
-```sql
-SELECT u.email, p.account_type, p.can_create_condominiums
-FROM auth.users AS u
-JOIN public.account_profiles AS p ON p.user_id = u.id
-WHERE lower(u.email) = lower('YOUR-OWN-ACCOUNT@EXAMPLE.COM');
-```
+Modern Android Chrome and current iPhone Safari can generally pick photos from the gallery and use the camera. Some **HEIC/HEIF** images may not decode in older browsers; users can select or convert a JPG/PNG/WebP instead. WebP encoding depends on the browser; the app reports a clear error if unsupported. Compression happens locally; slow phones and very large photos can take several seconds. Always zoom into the preview to verify the digits are readable.
 
-To grant the **platform support account** the narrow capability to create new condominiums (but not blanket access to existing ones), run the following **only after the 0.4 migration**. Replace the example email with your real support account's email:
+The app does **not** store the original uploaded photo (only the optimized WebP), and it does not run OCR. The private bucket's maximum accepted file size remains 5 MB; the migration does not increase costs or bucket limits. Loading historic pictures from the private bucket for PDF export uses network traffic.
 
-```sql
-UPDATE public.account_profiles AS p
-SET can_create_condominiums = true
-FROM auth.users AS u
-WHERE p.user_id = u.id
-  AND lower(u.email) = lower('YOUR-OWN-SUPPORT-EMAIL@EXAMPLE.COM')
-  AND p.account_type = 'suporte'
-RETURNING p.user_id, p.account_type, p.can_create_condominiums;
-```
+## Manual acceptance checks
 
-Confirm that **exactly one** row was returned. `0 rows` means the email or profile type did not match. Do NOT remove the `account_type` condition or bulk-grant this capability. The app's regular `authenticated` role has no UPDATE privilege or UPDATE RLS policy on `account_profiles`, so users cannot enable the flag from their browser.
+1. Login as a worker on Android/iPhone. Go to **Nova leitura → Tirar foto**, confirm a preview and save a reading; check that the photo displays in History.
+2. Repeat with **Nova leitura → Escolher da galeria**. Ensure a canceled picker doesn't unexpectedly erase a previously chosen photo. Attempt saving without photo: workers must be blocked.
+3. Open **Histórico antigo**, enter two dates, preview the batch. Attach a gallery image to only one date and leave the other without photo; verify both values and one thumbnail.
+4. Submit as a worker. The manager must see **Ver foto** only on the photographed date; readings must not be included in official graphs until approval.
+5. Approve the batch. Verify the picture appears on the correct historical reading and in PDF; the other entry is clearly marked without image.
+6. Repeat a manager's direct historical import with one optional image. Try a declining reading and verify the entire batch is rejected atomically.
+7. Test both light and dark mode, screen sizes 360 px–430 px, landscape photos, large gallery photos, and switching between condominiums without leaking selected photos to another condo.
+8. Check that the app still works when a historical row is imported **without any photo** and that existing data is unchanged.
 
-For troubleshooting the policy deployed on the server:
+## Testing
 
-```sql
-SELECT policyname, cmd, roles, with_check
-FROM pg_policies
-WHERE schemaname = 'public' AND tablename = 'condominiums';
-```
-
-Onboarding-created condominiums belong to the creating account; the existing trigger creates a manager membership for that condominium. Platform support accounts still require time-limited consent to access *other* condominiums.
-
-## New feature: historical data submitted for review
-
-Workers can open **Histórico antigo**, paste the rows or add entries on mobile (date + reading), preview the list, and tap **Enviar para aprovação**. The submission is saved in `historical_submissions`, separate from the official `readings` table.
-
-Managers open **Histórico antigo → Históricos aguardando aprovação**, inspect every entry, and **Aprovar** or **Rejeitar** (rejection requires a reason). On approval, every row is inserted atomically with the original worker attribution, with a historical/no-photo marker. The new rows then appear in the dashboard, PDF and WhatsApp reports. Rejected submissions are retained for audit and visible to the submitter along with the rejection reason.
-
-Any duplicate date, decreasing cumulative value or conflicting measurement causes the approval to **fail atomically**; no partial import is published. The manager should reject the submission with an explanation, then the worker can create a corrected batch. The 0.3 sequence-validation trigger continues to enforce monotonic meter values on approval. Normal worker readings still require photo evidence.
-
-**Security model:**
-- The worker cannot directly INSERT a `historical` entry into the official `readings` table: the RLS policy now reserves that write path for condominium managers.
-- The worker can only submit a batch for a condominium where they are a member with `role='zelador'`, enforced in an RPC.
-- Only a manager with `is_condo_admin(condominium_id)` may approve or reject an entry. No `historical_submissions` INSERT, UPDATE or DELETE permissions are granted to frontend browser users. The RPCs validate identity and ownership server-side.
-- A worker can read only their submitted batches; a manager can read all of the condominium's batches. Other condominiums remain isolated.
-- Support users with temporary access can inspect official readings as before; they cannot review workers' batches.
-
-## Mobile-first UX and tutorial
-
-- Approval actions are arranged as finger-friendly buttons on narrow screens, with a collapsible list of submitted readings for verification.
-- The **? Ajuda** tutorial is revised for both worker and manager. It is redisplayed once for this version and remains accessible any time.
-- Future workflow changes must include corresponding in-app tutorial and README updates.
-
-## Files to update
-
-**Replace**: `app.js`, `index.html`, `styles.css`, `sw.js`, `package.json`, `README.md`, `RELEASE_NOTES.md`.
-
-**Add**: `sql/upgrade_0_4_0.sql`, `permissions.js`, `tests/permissions.test.js`.
-
-**Keep**: `config.js` with real public Supabase config, `sql/setup.sql`, previous upgrade SQLs, `math.js`, `analysis.js`, `historical.js`, icons, `manifest.webmanifest`, and existing tests. No file removals.
-
-The ZIP includes the whole static app (except your private deployment-specific `config.js`) so you can use drag-and-drop upload. Maintain the top-level folder structure when uploading to GitHub.
-
-## Manual acceptance tests
-
-1. Confirm that existing managers can create a second condominium; workers cannot create one.
-2. Confirm support accounts cannot create by default. Grant one designated support account permission using SQL; verify it can create a NEW condominium. Ensure that it cannot access arbitrary existing condominiums.
-3. Login as worker on mobile: import two old readings without photos, preview, submit. Check the batch shows **Aguardando aprovação** and does NOT affect the official graph.
-4. Login as manager: open **Histórico antigo**, inspect the whole batch, approve. Check all readings appear with original worker attribution and `Histórico sem foto` labels, including in exports.
-5. Submit a second batch, reject it with a reason. Check the worker sees `Rejeitado` and the reason. Confirm it does not enter official readings.
-6. Try impossible dates, a decreasing value, a duplicate date and two concurrent approvals; verify failed approvals are atomic and no partial rows appear.
-7. Test condominium switching, worker-view preview, sign-out/in, dark mode and the in-app tutorial on small Android/iPhone screens.
-
-**Limitations:** SQL migration, Supabase Auth/RLS and WhatsApp/PDF integration require real-project tests. The automated JavaScript tests only cover local calculations/parsing. No live user data was modified in preparing this release.
+`npm test` runs arithmetic, historical parsing, permission and image-scaling tests, including orientation-preserving dimensions and size constraints. `node --check app.js` and `node --check photos.js` verify JavaScript syntax. **Live Supabase migrations, RLS/Storage permissions, Android and iPhone camera/gallery interactions, WhatsApp and PDF integrations must be tested in the real deployment.** JavaScript unit tests do not validate those external dependencies.
 
 ## GitHub
 
-- Commit: `feat: add manager approval for historical readings and fix condo creation permissions`
-- Tag: `v0.4.0-beta`
-- Release title: `HidroCondo v0.4.0-beta — Historical Approvals & Admin Permissions`
-- Mark as **pre-release**. Tag the release only after source files have been committed to the deployed branch.
+- Commit: `feat: support gallery photos and optional historical attachments with compression`
+- Tag: `v0.5.0-beta`
+- Release title: `HidroCondo v0.5.0-beta — Photo Upload & Historical Attachments`
+- Create a **pre-release** from the updated deployment branch **after committing the files**.
+- No files need to be removed; preserve `config.js`.

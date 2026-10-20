@@ -47,3 +47,22 @@
 .submitted-rows div{padding:9px 12px;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);font-size:.88rem}
 .submitted-rows div:last-child{border-bottom:0}
 @media(max-width:550px){.pending-card .button-row{display:grid;grid-template-columns:1fr 1fr}.pending-card .button-row .btn{width:100%;min-height:48px}.pending-card-heading{align-items:flex-start}}
+
+/* v0.5.0: thumb-friendly camera/gallery choices and optional per-history-photo fields. */
+.photo-choices{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.photo-choice{flex:1 1 170px;cursor:pointer;min-height:52px;text-align:center}
+/* Keep file inputs accessible to keyboard/screen readers and clickable via labels. */
+.visually-hidden-file{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.visually-hidden-file:focus-visible + .photo-choice{outline:2px solid var(--primary)}
+#photo-preview .help{margin:9px 0}
+.historical-photo-list{display:grid;gap:10px;margin:12px 0}
+.historical-photo-row{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.historical-photo-main{display:flex;flex-direction:column;gap:4px;min-width:140px;flex:1}
+.historical-photo-row .photo-choices{flex:1 1 240px;gap:6px}
+.historical-photo-row .photo-choice{flex:1 1 120px;min-height:46px;padding:10px 8px;font-size:.8rem}
+.historical-photo-thumb{max-width:94px;max-height:78px;border:1px solid var(--line);border-radius:8px;object-fit:contain}
+.historical-photo-meta{color:var(--muted);font-size:.8rem;overflow-wrap:anywhere}
+.historical-photo-attachments{display:flex;align-items:center;flex-wrap:wrap;gap:8px;width:100%}
+.submitted-rows .submitted-row-line{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.submitted-rows .submitted-row-line button{margin-left:auto}
+@media(max-width:550px){.photo-choices{display:grid;grid-template-columns:1fr 1fr;width:100%}.photo-choice{min-width:0;min-height:53px}.historical-photo-row{display:block}.historical-photo-row .photo-choices{margin:10px 0}}

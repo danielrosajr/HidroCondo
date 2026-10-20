@@ -1,25 +1,20 @@
-# HidroCondo v0.4.0-beta — Historical Approvals & Admin Permissions
+# HidroCondo v0.5.0-beta — Photo Upload & Historical Attachments
 
-## Added
-- Worker-submitted historical water-meter readings now enter a manager approval queue instead of official history.
-- Managers can review every submitted value, approve an entire batch atomically, or reject it with a reason.
-- Workers can track pending, approved and rejected history batches, including rejection explanations.
-- Explicit, optional platform-administrator capability for creating condominiums, enabled per support account in the Supabase SQL Editor.
+This update improves photo upload on mobile, reduces Supabase Storage usage and enables optional image evidence for imported historical readings.
 
-## Fixed / Security
-- Replaced the outdated condominium creation RLS policy while retaining owner and account-type checks.
-- Workers cannot bypass historical approval by inserting no-photo historical rows directly through the API.
-- Approval checks roles and meter sequence in PostgreSQL; pending/rejected rows never enter official statistics or PDF exports.
+## New features
 
-## UX
-- Finger-friendly approval controls and expandable readings lists on mobile.
-- Updated manager and worker in-app tutorials (Portuguese).
+- Choose a photo from the **camera or gallery** for current meter readings.
+- Add an **optional photo for each historical measurement** during the import preview. Historical entries without images remain supported.
+- Automatically optimize images to WebP before upload, preserving aspect ratio and using adaptive quality/resolution to help keep meter digits legible.
+- Display attached historical photos in the manager approval queue and carry them into approved readings and PDF reports.
+- Updated the in-app tutorial for both managers and workers.
 
-## Upgrade
-1. Back up Supabase.
-2. Run `sql/upgrade_0_4_0.sql` after earlier migrations.
-3. Optionally grant the support account condominium-creation permission using the explicit SQL in README.
-4. Replace deployed frontend files, keeping `config.js` unchanged.
-5. Test both roles and the full review lifecycle before production.
+## Security and compatibility
 
-**Status:** Beta — database migration and end-to-end Auth/RLS tests still require verification in a real Supabase project.
+- New `sql/upgrade_0_5_0.sql` migration updates the RLS policy and verifies worker-owned photo paths in historical submission and approval RPCs. Approval remains atomic.
+- All existing data and photographs are preserved; do not rerun `setup.sql`.
+- Keep your existing Supabase `config.js`; no secret keys belong in the public repository.
+- Photography, Storage permissions and PDF export still require end-to-end tests on the actual Supabase project and mobile devices.
+
+**Status:** Beta / testing required.

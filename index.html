@@ -125,7 +125,7 @@
       </div>
       <div id="worker-quick" class="panel worker-quick" hidden>
         <h2>Pronto para registrar?</h2>
-        <p>Fotografe o visor, confirme o número e salve. O restante é automático.</p>
+        <p>Tire uma foto ou escolha na galeria, confirme o número e salve. O restante é automático.</p>
       </div>
       <nav class="tabs" aria-label="Navegação principal">
         <button type="button" data-tab="dashboard" data-hide-worker class="active">📊 Painel</button>
@@ -146,15 +146,24 @@
 
       <section id="tab-new" class="tab-content" hidden>
         <div class="panel narrow-form">
-          <div class="panel-heading"><div><h2>Registrar uma leitura</h2><p>Fotografe, confira os números e salve.</p></div></div>
+          <div class="panel-heading"><div><h2>Registrar uma leitura</h2><p>Fotografe ou escolha da galeria. Confira os números e salve.</p></div></div>
           <form id="reading-form">
             <div id="meter-input-wrap"><label for="new-meter">Hidrômetro</label><select id="new-meter" required></select></div>
             <label for="reading-date">Data da leitura</label><input id="reading-date" type="date" required>
             <div id="previous-reading" class="notice">Procurando leitura anterior...</div>
-            <label for="reading-photo">Foto do visor <span class="required">*</span></label>
-            <input id="reading-photo" type="file" accept="image/*" capture="environment">
-            <div id="photo-preview" class="photo-preview" hidden><img id="preview-image" alt="Foto do hidrômetro para conferência"></div>
-            <p class="help">Confira os números com o visor. A foto é o comprovante da medição.</p>
+            <label>Foto do visor <span class="required">*</span></label>
+            <div class="photo-choices" role="group" aria-label="Escolher foto para esta medição">
+              <label class="btn btn-secondary photo-choice" for="reading-camera">📷 Tirar foto</label>
+              <input id="reading-camera" class="visually-hidden-file" type="file" accept="image/*" capture="environment" aria-label="Abrir câmera para esta medição">
+              <label class="btn btn-ghost photo-choice" for="reading-gallery">🖼 Escolher da galeria</label>
+              <input id="reading-gallery" class="visually-hidden-file" type="file" accept="image/*" aria-label="Escolher foto da galeria para esta medição">
+            </div>
+            <div id="photo-preview" class="photo-preview" hidden>
+              <img id="preview-image" alt="Foto do hidrômetro para conferência">
+              <div id="reading-photo-status" class="help" role="status"></div>
+              <button type="button" id="reading-photo-remove" class="btn btn-ghost btn-small">Remover foto</button>
+            </div>
+            <p class="help">A foto pode ser tirada agora ou escolhida na galeria. Ela será comprimida automaticamente antes do envio; confira se os números continuam legíveis.</p>
             <div class="meter-inputs">
               <div><label for="whole-reading">Parte inteira (m³)</label><input id="whole-reading" inputmode="numeric" required placeholder="4064"><small>Ex.: 4064 ou 4.064</small></div>
               <div><label for="decimal-reading">Decimais</label><input id="decimal-reading" inputmode="numeric" maxlength="3" value="000" required placeholder="959"><small>Ex.: 959 (ou 000)</small></div>
@@ -189,8 +198,8 @@
           <div id="history-requests-list" aria-live="polite"></div>
         </div>
         <div class="panel narrow-form">
-          <h2>Adicionar histórico sem fotos</h2>
-          <p>Para registros antigos. Cada linha deve ter <strong>data;leitura</strong>. Use o mesmo hidrômetro para a sequência. Não apaga nem modifica medições existentes.</p>
+          <h2>Adicionar histórico (foto opcional)</h2>
+          <p>Informe data e leitura. Depois de tocar em <strong>Conferir histórico</strong>, você pode anexar uma foto opcional para cada data, usando a câmera ou a galeria. Os registros sem foto continuam permitidos.</p>
           <form id="historical-form">
             <label for="historical-meter">Hidrômetro</label><select id="historical-meter" required></select>
             <div class="historical-quick-row">
@@ -200,7 +209,7 @@
             <button type="button" class="btn btn-secondary btn-block" id="historical-append">＋ Adicionar medição à lista</button>
             <label for="historical-paste">Medições para importar (uma por linha)</label>
             <textarea id="historical-paste" rows="9" required spellcheck="false" placeholder="10/10/2025;3981,000&#10;17/10/2025;4.064,959"></textarea>
-            <p class="help">Use DD/MM/AAAA;4.064,959 ou AAAA-MM-DD;4064,959. Se houve troca/reset do hidrômetro, cadastre outro equipamento.</p>
+            <p class="help">Use DD/MM/AAAA;4.064,959 ou AAAA-MM-DD;4064,959. Se houve troca/reset do hidrômetro, cadastre outro equipamento. As fotos são opcionais e devem ser anexadas na prévia abaixo.</p>
             <button id="historical-preview-button" type="button" class="btn btn-secondary btn-block">Conferir histórico</button>
             <div id="historical-preview" class="notice" hidden></div>
             <button id="historical-submit" type="submit" class="btn btn-primary btn-block" disabled>Salvar histórico confirmado</button>
@@ -227,7 +236,7 @@
         <div class="panel"><h2>Sobre o aplicativo</h2><p>Fotos protegidas, leituras em m³ com três casas decimais e cálculos automáticos. Os dados são sincronizados online; o envio de medição exige internet.</p><p>Para evitar perda de dados, exporte o CSV periodicamente. Não compartilhe senhas nem a chave secreta do Supabase.</p></div>
       </section>
     </section>
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.4.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.5.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

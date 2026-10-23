@@ -29,12 +29,14 @@ export function tourSteps(mode){
       S('#create-condo-form','Novo condomínio','Você pode criar um condomínio real apenas quando isso fizer parte do atendimento. Demonstrações ficam separadas.')
     ],
     'demo-admin':[
-      S('#demo-admin-form','Criar demonstração','Escolha nome fictício, validade e número de visitantes por papel.'),
+      S('#demo-quick-link-panel','Link único sem cadastro','Copie este link para qualquer pessoa experimentar os dois perfis no mesmo celular. Os dados ficam somente naquele aparelho.'),
+      S('#demo-admin-form','Demonstração colaborativa','Escolha nome fictício, validade e número de visitantes por papel.'),
       S('#demo-admin-list','Links sempre disponíveis','Toque em “Ver links” para recuperar convites novos. Demonstrações antigas podem precisar de links regenerados.'),
       S('#demo-admin-new-links','Compartilhar','Envie um link de síndico(a) e outro de zelador(a). São convites de teste, nunca de acesso a dados reais.')
     ],
     'demo-manager':[
       S('.demo-banner','Ambiente fictício','Tudo aqui é teste. Não use dados verdadeiros e não conte com a permanência destas informações.'),
+      S('#demo-role-switch','Alternar papéis','No modo rápido você pode ser síndico(a) ou zelador(a) no mesmo aparelho; tudo é fictício.'),
       S('[data-demo-tab="overview"]','Painel do(a) síndico(a)','Veja o gráfico e a evolução de 12 semanas de exemplo.'),
       S('#demo-limit-form','Limite semanal','Altere a referência de m³ por 7 dias para ver como os alertas funcionam.','overview'),
       S('[data-demo-tab="past"]','Históricos de demonstração','Aqui você aprova ou rejeita os históricos enviados pelo zelador de teste.'),
@@ -42,6 +44,7 @@ export function tourSteps(mode){
     ],
     'demo-worker':[
       S('.demo-banner','Este ambiente é fictício','As leituras são testes e as fotos não são salvas. Você pode perder acesso quando o período terminar.'),
+      S('#demo-role-switch','Um link, dois perfis','Alterne para síndico(a) e veja o resultado do que registrou como zelador(a).'),
       S('[data-demo-tab="new"]','Registrar teste','Digite uma leitura fictícia em data nova. Não use os números reais do seu condomínio.'),
       S('#demo-gallery','Escolher foto','Esta foto é uma prévia local: não será enviada ao servidor.','new'),
       S('#demo-whole','Informar o número','Digite a parte inteira e os decimais do visor fictício.','new'),

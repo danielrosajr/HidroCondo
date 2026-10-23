@@ -1,29 +1,20 @@
-# HidroCondo v0.8.0-beta — Condominium Invitations & Access Management
+# HidroCondo v0.9.0-beta — One-Link Quick Demo & Role Switching
 
-## New
+## Added
+- **Single-link quick demo**: share `?demo-rapida=1` to let anyone try immediately without an account or anonymous Supabase sign-in.
+- **Switch roles instantly** within the same browser between worker and manager views.
+- **Complete fictional walkthrough**: capture test readings, submit histories as worker, review as manager, see charts and consumption thresholds.
+- **Public demo entry** from the login screen and a copy-link action in the support admin demo panel.
+- Updated Portuguese guided tour, mobile labels and prominent warnings.
 
-- Invite additional **managers** and **workers** to an existing condominium with secure one-time links.
-- Condominium owners can invite/remove managers; delegated managers can invite/remove workers only.
-- Members can have **different roles in different condominiums** using one login.
-- New **People & permissions** settings panel lists members and pending invitations.
-- Revoke unused invitations and remove existing memberships without deleting readings or photo history.
-- Onboarding prioritizes invitation acceptance rather than asking the recipient to create a new condominium; the link can be resumed after email confirmation in the same browser.
-- Updated Portuguese in-app guided tour and mobile-friendly controls.
+## Reliability and privacy
+- Quick Demo performs no Supabase Auth, Database or Storage requests. It cannot trigger anonymous sign-in limits.
+- Each device has a fully independent in-memory simulation. No data sync; data resets on reload, exit or browser tab close.
+- Existing collaborative, expiring demo links remain available as a separate legacy/advanced option.
+- No database migration, real account permission change or photo storage changes.
 
-## Security
+## Install
+Replace `app.js`, `demo.js`, `index.html`, `styles.css`, `sw.js`, `tour.js`, `package.json` and docs; add `quick-demo.js` and `tests/quick-demo.test.js` on your deploy branch. Preserve `config.js`, existing SQL migrations and user data. **No SQL to run.**
 
-- Five server-side, permission-checked PostgreSQL RPCs and RLS-protected invitation metadata.
-- High-entropy, single-use tokens stored as SHA-256 digests only.
-- 24-hour expiration for manager links and 7-day expiration for worker links.
-- Owner access cannot be removed; no invitation transfers ownership.
-- Demo anonymous sessions and support-only accounts cannot redeem real membership invitations.
-
-## Upgrade
-
-Run `sql/upgrade_0_8_0.sql` after all previous migrations; then deploy the updated static site. **Do not replace configured `config.js` or rerun `setup.sql`**. No existing data is intentionally deleted.
-
-## Known beta limitations
-
-Management links are bearer tokens; anyone who obtains an unused link may accept it with an eligible account. Treat links as sensitive, share them privately and revoke if exposed. Raw links cannot be recovered after leaving the invitation creation screen (only pending metadata remains).
-
-JavaScript unit tests passed locally; real Supabase RLS/RPC integration and smartphone tests remain required before production use.
+## Status
+Beta. JavaScript tests pass. Mobile cross-browser acceptance testing is still required.

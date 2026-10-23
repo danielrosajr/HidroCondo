@@ -125,3 +125,15 @@
 .people-identity small{font-size:.78rem;color:var(--muted)}
 .people-row .btn{flex-shrink:0}
 @media(max-width:570px){.people-row{align-items:stretch;flex-direction:column}.people-row .btn{width:100%}.people-head .btn{width:100%}}
+
+/* v0.9.0: local quick demo with one shareable link and instant role switch. */
+.quick-role-panel{border:2px solid var(--line);margin-bottom:14px}
+.quick-role-panel strong{display:block;font-size:1rem;margin-bottom:5px}
+.quick-role-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.quick-role-options .btn{min-height:52px;white-space:normal;text-align:center;line-height:1.35}
+.quick-role-options .btn.selected{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 0 0 2px var(--primary)}
+.quick-admin-panel{border:2px solid var(--primary);margin-bottom:18px}
+.quick-admin-panel h2{margin-bottom:6px}
+.quick-warning{padding:13px 15px;margin-bottom:14px}
+@media(max-width:580px){.quick-role-options{grid-template-columns:1fr}.quick-role-options .btn{width:100%;min-height:48px}.quick-admin-panel{padding:15px}}
+@media print{#demo-role-switch,#demo-quick-warning,#demo-quick-guide{display:none!important}}

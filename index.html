@@ -75,6 +75,7 @@
         <button type="submit" class="btn btn-primary btn-block" id="auth-submit">Entrar</button>
         <p class="help" id="auth-helper">Acesso exclusivo para pessoas autorizadas do condomínio.</p>
       </form>
+      <div class="panel" style="margin-top:12px"><h2>Quer conhecer antes de criar uma conta?</h2><p>Experimente uma demonstração fictícia. Um link, dois perfis, sem cadastrar e-mail e sem salvar dados reais.</p><a class="btn btn-secondary btn-block" href="?demo-rapida=1">🧪 Experimentar demonstração rápida</a></div>
     </section>
 
     <section id="screen-profile" class="onboard" hidden>
@@ -278,12 +279,13 @@
       <div class="panel demo-disclaimer">
         <h2>Antes de experimentar, saiba que:</h2>
         <ul>
-          <li>As medições digitadas são apenas testes e <strong>podem ser excluídas sem aviso após o prazo</strong>.</li>
+          <li>As medições digitadas são apenas testes e <strong>podem ser perdidas ao sair, atualizar a página ou após o prazo do convite</strong>.</li>
           <li>As fotos escolhidas são <strong>pré-visualizadas no dispositivo, mas NÃO são enviadas nem salvas</strong>.</li>
           <li>Se sair, limpar o navegador, mudar de celular ou perder o link, <strong>poderá perder o acesso e as configurações</strong>.</li>
           <li>Não há compromisso de continuidade, backup ou conversão automática dos registros para uma conta real.</li>
           <li>Para utilização verdadeira, será necessário criar uma conta e configurar um condomínio real.</li>
         </ul>
+        <p id="demo-mode-hint" class="notice notice-info">Escolha um modo de demonstração e confira as condições abaixo.</p>
         <label class="demo-checkbox"><input id="demo-accept" type="checkbox"> <span>Li e entendi que este é um teste com informações fictícias e descartáveis.</span></label>
         <button id="demo-enter" class="btn btn-primary btn-xl btn-block" type="button" disabled>▶ Experimentar sem cadastro</button>
       </div>
@@ -292,11 +294,21 @@
     <section id="screen-demo" class="demo-screen" hidden>
       <div class="demo-banner" role="status" aria-live="off">
         <strong>⚠️ MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS E DESCARTÁVEIS</strong>
-        <span>Não use informações reais. Fotos não são salvas. Ao sair ou após o prazo, você pode perder todos os testes.</span>
+        <span>Não use informações reais. Fotos não são salvas. Ao sair ou recarregar no modo rápido, todos os testes são perdidos.</span>
       </div>
-      <div class="demo-screen-top"><div><span id="demo-role" class="eyebrow">Visitante de teste</span><h1 id="demo-space-name">Condomínio de testes</h1><p>Disponível até <strong id="demo-expiry"></strong></p></div><div class="button-row"><button id="demo-reload" type="button" class="btn btn-secondary btn-small">↻ Atualizar</button><button id="demo-leave" type="button" class="btn btn-ghost btn-small">Sair do teste</button></div></div>
+      <div id="demo-quick-warning" class="notice notice-info quick-warning" hidden><strong>Simulação local:</strong> você pode alternar entre os dois perfis, e a mesma medição aparecerá nos dois painéis <strong>neste aparelho</strong>. Os dados <strong>não são compartilhados entre celulares e serão apagados ao recarregar, sair ou fechar</strong>.</div>
+      <div class="demo-screen-top"><div><span id="demo-role" class="eyebrow">Visitante de teste</span><h1 id="demo-space-name">Condomínio de testes</h1><p><span id="demo-expiry-label">Disponível até </span><strong id="demo-expiry"></strong></p></div><div class="button-row"><button id="demo-reload" type="button" class="btn btn-secondary btn-small">↻ Atualizar</button><button id="demo-leave" type="button" class="btn btn-ghost btn-small">Sair do teste</button></div></div>
+      <div id="demo-role-switch" class="panel quick-role-panel" hidden>
+        <strong>Alternar perfil na demonstração</strong>
+        <p class="help">Experimente como zelador(a), registre uma leitura e troque para síndico(a) para conferir o resultado. É uma simulação, não uma conta real.</p>
+        <div class="quick-role-options" role="group" aria-label="Escolher perfil de demonstração">
+          <button type="button" class="btn btn-secondary selected" data-quick-role="zelador" aria-pressed="true">👷 Ver como zelador(a)</button>
+          <button type="button" class="btn btn-secondary" data-quick-role="sindico" aria-pressed="false">📊 Ver como síndico(a)</button>
+        </div>
+      </div>
+      <div id="demo-quick-guide" class="notice notice-info" hidden><strong>Experimente:</strong> como zelador(a), vá em Histórico antigo e envie duas leituras de exemplo para aprovação. Depois toque em “Ver como síndico(a)” acima para aprovar o pedido.</div>
       <nav class="tabs demo-tabs" aria-label="Telas da demonstração">
-        <button type="button" data-demo-tab="overview" class="active">📊 Painel</button>
+        <button id="demo-tab-manager-button" type="button" data-demo-tab="overview" class="active">📊 Painel</button>
         <button type="button" data-demo-tab="new">📷 Registrar</button>
         <button type="button" data-demo-tab="history">🗂 Histórico</button>
         <button type="button" data-demo-tab="past">🕓 Histórico antigo</button>
@@ -325,7 +337,7 @@
           <img id="demo-photo-preview" class="demo-photo-preview" alt="Prévia local que não será salva" hidden><p class="help" id="demo-photo-message">Se escolher uma foto, ela ficará só neste dispositivo e será descartada ao sair desta tela de testes.</p>
           <div class="meter-inputs"><div><label for="demo-whole">Parte inteira (m³)</label><input id="demo-whole" inputmode="numeric" placeholder="Ex.: 4800" required></div><div><label for="demo-decimals">Decimais</label><input id="demo-decimals" inputmode="numeric" maxlength="3" value="000" required></div></div>
           <button class="btn btn-primary btn-block btn-xl" type="submit">Salvar medição fictícia</button>
-          <p class="help">Somente o número e a data serão compartilhados com os outros visitantes deste teste. Não use leituras reais.</p>
+          <p class="help">Na demonstração rápida, o número e a data existem apenas neste aparelho. Na demonstração colaborativa, podem ser compartilhados com outros visitantes autorizados. Não use leituras reais.</p>
         </form>
       </section>
       <section id="demo-tab-history" class="demo-tab" hidden>
@@ -334,8 +346,8 @@
       </section>
       <section id="demo-tab-past" class="demo-tab" hidden>
         <div id="demo-requests-panel" class="panel"><h2>Solicitações para aprovação</h2><p>Como síndico(a) de demonstração, você pode aprovar ou rejeitar lotes enviados pelo(a) zelador(a).</p><div id="demo-requests"></div></div>
-        <form id="demo-history-form" class="panel narrow-form"><h2>Adicionar histórico fictício</h2><p id="demo-history-instructions"></p><label for="demo-history-input">Data e leitura, uma por linha</label><textarea id="demo-history-input" rows="5" required placeholder="10/10/2025;3981,000
-17/10/2025;4064,959"></textarea><p class="help">Use datas anteriores a hoje e valores compatíveis com as medições de exemplo.</p><button id="demo-history-action" type="submit" class="btn btn-primary btn-block">Enviar teste</button></form>
+        <form id="demo-history-form" class="panel narrow-form"><h2>Adicionar histórico fictício</h2><p id="demo-history-instructions"></p><label for="demo-history-input">Data e leitura, uma por linha</label><textarea id="demo-history-input" rows="5" required placeholder="10/10/2025;2981,000
+17/10/2025;3064,000"></textarea><p class="help">Use datas anteriores a hoje e valores compatíveis com as medições de exemplo.</p><button id="demo-history-action" type="submit" class="btn btn-primary btn-block">Enviar teste</button></form>
       </section>
       <div class="panel demo-finish"><h2>Gostou de experimentar?</h2><p>Crie uma conta real para utilizar o HidroCondo de verdade. As medições fictícias não serão transferidas.</p><button id="demo-signup" type="button" class="btn btn-secondary">Criar minha conta / Voltar ao início</button></div>
     </section>
@@ -346,14 +358,21 @@
     </section>
 
     <section id="screen-demo-admin" class="onboard" hidden>
-      <div class="demo-admin-header"><div><span class="eyebrow">SUPORTE TÉCNICO AUTORIZADO</span><h1>🧪 Demonstrações por convite</h1><p>Gere dois links separados para teste de síndico(a) e zelador(a), sem necessidade de e-mail ou senha.</p></div><button id="demo-admin-back" class="btn btn-ghost" type="button">← Voltar</button></div>
+      <div class="demo-admin-header"><div><span class="eyebrow">SUPORTE TÉCNICO AUTORIZADO</span><h1>🧪 Demonstrações</h1><p>Envie um link único de demonstração rápida, sem cadastro, ou use os convites colaborativos anteriores.</p></div><button id="demo-admin-back" class="btn btn-ghost" type="button">← Voltar</button></div>
       <div class="demo-banner"><strong>⚠️ SOMENTE DADOS FICTÍCIOS</strong><span>Não envie links de produção. Não use dados reais de clientes. Os testes expiram e são descartáveis.</span></div>
-      <form id="demo-admin-form" class="panel narrow-form"><h2>Criar condomínio fictício</h2><label for="demo-admin-name">Nome de teste</label><input id="demo-admin-name" required minlength="3" maxlength="100" placeholder="Ex.: HidroCondo Demo 001"><div class="historical-quick-row"><div><label for="demo-admin-hours">Validade</label><select id="demo-admin-hours"><option value="24">24 horas</option><option value="72" selected>72 horas</option><option value="168">7 dias</option></select></div><div><label for="demo-admin-uses">Convidados por perfil</label><select id="demo-admin-uses"><option value="1" selected>1 pessoa</option><option value="3">3 pessoas</option><option value="5">5 pessoas</option></select></div></div><button type="submit" class="btn btn-primary btn-block btn-xl">Gerar os dois links</button><p class="help">Somente suporte autorizado pode criar. Cada convite possui limite de usos e expira automaticamente.</p></form>
+      <div id="demo-quick-link-panel" class="panel quick-admin-panel">
+        <h2>⭐ Demonstração rápida — recomendada</h2>
+        <p>Um único link para mostrar as telas de <strong>síndico(a) e zelador(a)</strong>. Funciona sem login anônimo, sem criar contas e sem salvar dados reais. Cada aparelho inicia um teste independente.</p>
+        <label for="demo-quick-link">Link único para compartilhar</label>
+        <div class="demo-link-row"><input id="demo-quick-link" type="text" readonly><button type="button" class="btn btn-primary" id="demo-copy-quick">Copiar link único</button></div>
+        <p class="help">Este link é público e não expira. É seguro para apresentar apenas porque não consulta nem altera dados reais e todas as alterações são descartadas ao recarregar.</p>
+      </div>
+      <form id="demo-admin-form" class="panel narrow-form"><h2>Demonstração colaborativa (modo antigo)</h2><label for="demo-admin-name">Nome de teste</label><input id="demo-admin-name" required minlength="3" maxlength="100" placeholder="Ex.: HidroCondo Demo 001"><div class="historical-quick-row"><div><label for="demo-admin-hours">Validade</label><select id="demo-admin-hours"><option value="24">24 horas</option><option value="72" selected>72 horas</option><option value="168">7 dias</option></select></div><div><label for="demo-admin-uses">Convidados por perfil</label><select id="demo-admin-uses"><option value="1" selected>1 pessoa</option><option value="3">3 pessoas</option><option value="5">5 pessoas</option></select></div></div><button type="submit" class="btn btn-primary btn-block btn-xl">Gerar dois convites colaborativos</button><p class="help">Para testar simultaneamente entre aparelhos, este modo usa o login anônimo do Supabase e pode ser afetado pelos limites de autenticação. Para apresentar rapidamente, use o link único acima.</p></form>
       <div id="demo-admin-new-links" class="panel" hidden><h2>✅ Convites criados</h2><p>Estes links poderão ser consultados novamente pelo administrador autorizado. Guarde-os com cuidado: cada link concede acesso temporário à demonstração.</p><p>Válidos até: <strong id="demo-admin-expiry"></strong></p><label for="demo-manager-link">Link para síndico(a) de demonstração</label><div class="demo-link-row"><input id="demo-manager-link" readonly><button id="demo-copy-manager" type="button" class="btn btn-secondary">Copiar</button></div><label for="demo-worker-link">Link para zelador(a) de demonstração</label><div class="demo-link-row"><input id="demo-worker-link" readonly><button id="demo-copy-worker" type="button" class="btn btn-secondary">Copiar</button></div></div>
       <div class="panel"><div class="panel-heading"><h2>Meus ambientes de demonstração</h2><button id="demo-admin-refresh" type="button" class="btn btn-ghost btn-small">↻ Atualizar</button></div><p class="help">Em cada ambiente ativo, use “Ver links”. Para convites gerados antes da v0.7.0, use “Regenerar”: os links antigos serão invalidados, mas sessões já ativadas permanecem até o término.</p><div id="demo-admin-list"></div></div>
     </section>
 
-    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.8.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
+    <footer class="site-footer">HidroCondo <span id="app-version">MVP 0.9.0-beta</span> • Feito para simplificar a rotina do condomínio</footer>
   </main>
   <dialog id="edit-dialog" class="dialog">
     <form id="edit-form">

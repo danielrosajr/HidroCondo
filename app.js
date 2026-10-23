@@ -874,14 +874,16 @@ function exportCSV(){
 async function init(){
   pendingMemberInvite(); // Preserve a valid invite across email-confirmation redirects.
   if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);
+  const quickDemo=new URLSearchParams(location.search).has('demo-rapida');
   const cfg=window.HIDRO_CONFIG;
-  if(!cfg?.supabaseUrl?.startsWith('https://')||!cfg?.supabaseKey||cfg.supabaseUrl.includes('SEU-PROJETO')||cfg.supabaseKey.includes('SUA_CHAVE')||!window.supabase){screens('setup');return;}
-  state.db=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true}});
+  if(!quickDemo && (!cfg?.supabaseUrl?.startsWith('https://')||!cfg?.supabaseKey||cfg.supabaseUrl.includes('SEU-PROJETO')||cfg.supabaseKey.includes('SUA_CHAVE')||!window.supabase)){screens('setup');return;}
+  state.db=quickDemo?null:window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseKey,{auth:{persistSession:true,autoRefreshToken:true}});
   guidedTour=createGuidedTour({onTab:(tab)=>{if(tab){if(document.querySelector('#screen-demo:not([hidden])'))demoController?.selectTab(tab);else if(document.querySelector('#screen-app:not([hidden])'))setTab(tab);}}});
   demoController=makeDemoController({db:state.db,screens,toast,homeUrl,goHome:async()=>{state.pickerOpen=true;await bootstrap();},startSignup:()=>changeAuthMode('signup'),showTour:(mode)=>startGuidedTour(mode)});
   demoController.init();
   // Never reset the current screen on INITIAL_SESSION or TOKEN_REFRESHED.
   // Supabase refreshes sessions after a background/foreground transition on mobile.
+  if(quickDemo){demoController.welcome();return;}
   state.db.auth.onAuthStateChange((event,session)=>{
     if(new URLSearchParams(location.search).has('demo'))return;
     if(event==='TOKEN_REFRESHED'||event==='INITIAL_SESSION'||event==='USER_UPDATED')return;
@@ -890,7 +892,7 @@ async function init(){
     setTimeout(()=>bootstrap().catch(err=>{toast(apiError(err),true);screens('auth');}),0);
   });
   if(new URLSearchParams(location.search).has('demo'))demoController.welcome();
-  else {await bootstrap();if(state.profile==='suporte'&&sessionStorage.getItem('hc_support_view')==='demo-admin')await demoController.showAdmin();}
+  else {await bootstrap();if(new URLSearchParams(location.search).has('cadastro')&&!state.user)changeAuthMode('signup');if(state.profile==='suporte'&&sessionStorage.getItem('hc_support_view')==='demo-admin')await demoController.showAdmin();}
 }
 function bindEvents(){
   $('auth-mode-login').addEventListener('click',()=>changeAuthMode('login'));
@@ -1089,7 +1091,7 @@ function startGuidedTour(mode){
   if(!$('tutorial-dialog').open)$('tutorial-dialog').showModal();
 }
 function showTutorial(){
-  const demo=new URLSearchParams(location.search).has('demo');
+  const demo=new URLSearchParams(location.search).has('demo')||new URLSearchParams(location.search).has('demo-rapida');
   if(document.querySelector('#screen-demo-admin:not([hidden])'))return startGuidedTour('demo-admin');
   if(demo&&document.querySelector('#screen-demo:not([hidden])'))return startGuidedTour(demoController?.currentRole()==='sindico'?'demo-manager':'demo-worker');
   if(document.querySelector('#screen-app:not([hidden])'))return startGuidedTour(viewWorker()?'worker':state.profile==='suporte'?'support':'manager');
@@ -1106,5 +1108,5 @@ applyTheme(localStorage.getItem('hidrocondo_theme')||'auto');
 if(new URLSearchParams(location.search).has('suporte'))$('auth-mode-signup').hidden=true;
 bindEvents();init().catch(err=>{console.error(err);toast(`Erro ao iniciar: ${apiError(err)}`,true);screens('setup');});
 // Atualização automática do painel sem usar chaves privilegiadas e sem refresh da página.
-setInterval(()=>{if(!document.hidden&&!new URLSearchParams(location.search).has('demo')&&state.user&&state.condo&&!state.busy)loadData().catch(console.warn);},30000);
-window.addEventListener('focus',()=>{if(!new URLSearchParams(location.search).has('demo')&&state.user&&state.condo)loadData().catch(console.warn);});
+setInterval(()=>{if(!document.hidden&&!new URLSearchParams(location.search).has('demo')&&!new URLSearchParams(location.search).has('demo-rapida')&&state.user&&state.condo&&!state.busy)loadData().catch(console.warn);},30000);
+window.addEventListener('focus',()=>{if(!new URLSearchParams(location.search).has('demo')&&!new URLSearchParams(location.search).has('demo-rapida')&&state.user&&state.condo)loadData().catch(console.warn);});

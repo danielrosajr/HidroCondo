@@ -2,6 +2,7 @@ import {parseHistoricalText, previewHistorical} from './historical.js';
 import {readValue, toMillis, formatM3, buildIntervals, localDate, fmtDate} from './math.js';
 import {getWaterInsights} from './analysis.js';
 import {parseWeeklyLimit,evaluateWeeklyLimit,weeklyLimitMessage} from './limits.js';
+import {createQuickDemo,quickDemoAction,quickSnapshot,quickDemoLink} from './quick-demo.js';
 
 // All demonstration database access occurs via server-side authorized RPCs.
 // Demo photos are local previews only; they are NEVER uploaded to Supabase Storage.
@@ -25,53 +26,102 @@ const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const dateTime=iso=>new Date(iso).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'});
 
 export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup,showTour}){
- const ctx={space:null,token:null,role:null,data:null,timer:null,photo:null,photoUrl:null,busy:false,links:null,activeTab:null};
- const rpc=async(fn,args={})=>{const {data,error}=await db.rpc(fn,args);if(error)throw error;return data;};
+ const ctx={space:null,token:null,role:null,data:null,timer:null,photo:null,photoUrl:null,busy:false,links:null,activeTab:null,quick:false,quickState:null};
+ const rpc=async(fn,args={})=>{
+  if(ctx.quick)return quickDemoAction(ctx.quickState,fn,args,ctx.role);
+  const {data,error}=await db.rpc(fn,args);if(error)throw error;return data;
+ };
  const warn=(err)=>{console.error(err);toast(err?.message||String(err),true);};
  const working=async(fn)=>{if(ctx.busy)return;ctx.busy=true;try{await fn();}catch(err){warn(err);}finally{ctx.busy=false;}};
  function clearPhoto(){if(ctx.photoUrl)URL.revokeObjectURL(ctx.photoUrl);ctx.photo=null;ctx.photoUrl=null;const img=$('demo-photo-preview');img.hidden=true;img.removeAttribute('src');$('demo-camera').value='';$('demo-gallery').value='';}
- function stop(){if(ctx.timer){clearInterval(ctx.timer);ctx.timer=null;}clearPhoto();ctx.space=null;ctx.role=null;ctx.data=null;}
- function welcome(){stop();ctx.token=new URLSearchParams(location.search).get('demo');const accepted=sessionStorage.getItem(`hc_demo_accepted_${ctx.token}`)==='1';$('demo-accept').checked=accepted;$('demo-enter').disabled=!accepted;screens('demo-welcome');if(accepted)setTimeout(()=>working(enter),50);}
+ function stop(){if(ctx.timer){clearInterval(ctx.timer);ctx.timer=null;}clearPhoto();ctx.space=null;ctx.role=null;ctx.data=null;ctx.quickState=null;ctx.quick=false;}
+ function welcome(){
+  stop();
+  const params=new URLSearchParams(location.search);
+  ctx.quick=params.has('demo-rapida');
+  ctx.token=ctx.quick?'quick-local':params.get('demo');
+  if(ctx.quick){
+    $('demo-mode-hint').textContent='Demonstração rápida: um link para todas as pessoas. Alterne entre síndico(a) e zelador(a). Cada aparelho simula seus próprios dados; ao atualizar ou sair, tudo é perdido.';
+    $('demo-enter').textContent='▶ Experimentar os dois perfis sem cadastro';
+  }else{
+    $('demo-mode-hint').textContent='Demonstração colaborativa: dois convites para papéis separados. Requer login anônimo habilitado no Supabase.';
+    $('demo-enter').textContent='▶ Experimentar sem cadastro';
+  }
+  // Explicit consent on every new page load; never reuse a prior acceptance.
+  $('demo-accept').checked=false;
+  $('demo-enter').disabled=true;
+  screens('demo-welcome');
+ }
  function tourOnce(mode){const key=`hc_tour_v070_${mode}`;if(!localStorage.getItem(key)){localStorage.setItem(key,'1');setTimeout(()=>showTour?.(mode),250);}}
  async function enter(){
   if(!$('demo-accept').checked)throw Error('Confirme que entendeu as condições do ambiente de testes.');
-  const {data:existing,error:err}=await db.auth.getUser();
-  if(err && !/session missing/i.test(err.message))console.warn(err.message);
-  if(!existing?.user){
-   const {error}=await db.auth.signInAnonymously();
-   if(error)throw Error(`Não foi possível entrar sem cadastro. Ative Anonymous Sign-Ins no Supabase. ${error.message}`);
-  }
   let claim;
-  try{claim=await rpc('hc_demo_redeem',{p_token:ctx.token});}
-  catch(e){if(/vencid|encerrad|expirad/i.test(e.message)){ended();return;}throw e;}
+  if(ctx.quick){
+    ctx.quickState=createQuickDemo();
+    claim={space_id:'quick-local',role:'zelador',name:ctx.quickState.name,expires_at:null};
+  }else{
+    const {data:existing,error:err}=await db.auth.getUser();
+    if(err && !/session missing/i.test(err.message))console.warn(err.message);
+    if(!existing?.user){
+      const {error}=await db.auth.signInAnonymously();
+      if(error)throw Error(`Falha no login anônimo. Confira Authentication → Providers → Anonymous e os limites de acesso. ${error.message}`);
+    }
+    try{claim=await rpc('hc_demo_redeem',{p_token:ctx.token});}
+    catch(e){if(/vencid|encerrad|expirad/i.test(e.message)){ended();return;}throw e;}
+  }
   ctx.space=claim.space_id;ctx.role=claim.role;
-  sessionStorage.setItem(`hc_demo_accepted_${ctx.token}`,'1');
   $('demo-space-name').textContent=claim.name;
   $('demo-role').textContent=claim.role==='sindico'?'Síndico(a) de demonstração':'Zelador(a) de demonstração';
-  $('demo-expiry').textContent=dateTime(claim.expires_at);
+  $('demo-expiry').textContent=ctx.quick?'Sessão temporária no navegador':dateTime(claim.expires_at);
+  $('demo-expiry-label').textContent=ctx.quick?'Duração: ':'Disponível até ';
+  $('demo-role-switch').hidden=!ctx.quick;
+  $('demo-quick-guide').hidden=!ctx.quick;
+  $('demo-quick-warning').hidden=!ctx.quick;
+  $('demo-reload').textContent=ctx.quick?'↻ Atualizar painel':'↻ Atualizar';
+  $('demo-photo-message').textContent='Se escolher uma foto, ela ficará apenas neste aparelho e será descartada ao sair.';
   $('demo-reading-date').value=localDate();
+  applyDemoRole();
+  screens('demo');
+  demoTab(ctx.role==='sindico'?'overview':'new');
+  await refresh();
+  const tab=ctx.quick?null:sessionStorage.getItem(`hc_demo_tab_${ctx.space}`);
+  if(tab&&['overview','new','history','past'].includes(tab))demoTab(tab);
+  tourOnce(ctx.role==='sindico'?'demo-manager':'demo-worker');
+  if(!ctx.quick)ctx.timer=setInterval(()=>{if(ctx.data?.expires_at&&new Date(ctx.data.expires_at).getTime()<=Date.now())ended();else refresh().catch(e=>{if(/terminou|revogad|vencid/i.test(e.message))ended();else console.warn(e);});},30000);
+ }
+
+ function applyDemoRole(){
+  $('demo-role').textContent=ctx.role==='sindico'?'Síndico(a) de demonstração':'Zelador(a) de demonstração';
   $('demo-worker-new').hidden=ctx.role!=='zelador';
   $('demo-manager-stats').hidden=ctx.role!=='sindico';
   $('demo-requests-panel').hidden=ctx.role!=='sindico';
   $('demo-history-action').textContent=ctx.role==='zelador'?'Enviar para aprovação (teste)':'Adicionar histórico fictício';
   $('demo-history-instructions').textContent=ctx.role==='zelador'?'O pedido aparecerá para o(a) síndico(a) de demonstração aprovar.':'As leituras serão acrescentadas diretamente ao histórico de teste.';
-  screens('demo');
-  demoTab(ctx.role==='sindico'?'overview':'new');
-  await refresh();
-  const tab=sessionStorage.getItem(`hc_demo_tab_${ctx.space}`);
-  if(tab&&['overview','new','history','past'].includes(tab))demoTab(tab);
-  tourOnce(ctx.role==='sindico'?'demo-manager':'demo-worker');
-  ctx.timer=setInterval(()=>{if(ctx.data?.expires_at&&new Date(ctx.data.expires_at).getTime()<=Date.now())ended();else refresh().catch(e=>{if(/terminou|revogad|vencid/i.test(e.message))ended();else console.warn(e);});},30000);
+  for(const button of document.querySelectorAll('[data-quick-role]')){
+    const selected=button.dataset.quickRole===ctx.role;
+    button.classList.toggle('selected',selected);
+    button.setAttribute('aria-pressed',String(selected));
+  }
+  // The worker sees only their normal working areas, not the manager dashboard.
+  $('demo-tab-manager-button').hidden=ctx.role==='zelador';
+ }
+ function switchQuickRole(role){
+  if(!ctx.quick||!['sindico','zelador'].includes(role))return;
+  if(ctx.role===role)return;
+  clearPhoto();ctx.role=role;
+  applyDemoRole();render();
+  demoTab(role==='sindico'?'overview':'new');
+  toast(role==='sindico'?'Agora você está vendo como síndico(a).':'Agora você está vendo como zelador(a).');
  }
  async function refresh(){
   if(!ctx.space)return;
-  const data=await rpc('hc_demo_snapshot',{p_space:ctx.space});
+  const data=ctx.quick?quickSnapshot(ctx.quickState):await rpc('hc_demo_snapshot',{p_space:ctx.space});
   ctx.data=data;render();
  }
  function ended(){if(ctx.timer)clearInterval(ctx.timer);ctx.timer=null;screens('demo-ended');}
  function demoTab(tab){
   ctx.activeTab=tab;
-  if(ctx.space)sessionStorage.setItem(`hc_demo_tab_${ctx.space}`,tab);
+  if(ctx.space&&!ctx.quick)sessionStorage.setItem(`hc_demo_tab_${ctx.space}`,tab);
   for(const el of document.querySelectorAll('[data-demo-tab]'))el.classList.toggle('active',el.dataset.demoTab===tab);
   for(const id of ['overview','new','history','past'])$('demo-tab-'+id).hidden=id!==tab;
   if(ctx.role==='zelador'&&tab==='overview')$('demo-manager-stats').hidden=true;
@@ -96,7 +146,7 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup,
   $('demo-requests').innerHTML=d.requests.length?d.requests.map(r=>`<article class="demo-request"><strong>${r.entries.length} leitura(s)</strong><span class="pill">${r.status==='pending'?'Aguardando aprovação':r.status==='approved'?'Aprovado':'Rejeitado'}</span><details><summary>Ver datas e valores</summary><ul>${r.entries.map(e=>`<li>${fmtDate(e.measured_on)} — ${escape(e.value_m3)} m³</li>`).join('')}</ul></details>${r.status==='pending'&&ctx.role==='sindico'?`<div class="demo-actions"><button type="button" class="btn btn-primary" data-demo-review="approve" data-id="${r.id}">Aprovar</button><button type="button" class="btn btn-secondary" data-demo-review="reject" data-id="${r.id}">Rejeitar</button></div>`:''}${r.review_note?`<p>${escape(r.review_note)}</p>`:''}</article>`).join(''):'<p class="help">Nenhuma solicitação de histórico de testes.</p>';
   $('demo-reading-reference').textContent=last?`Última leitura: ${end} m³ em ${fmtDate(last.measured_on)}. Digite um valor igual ou maior, em uma nova data.`:'Sem leitura anterior.';
   $('demo-worker-pending').hidden=ctx.role!=='zelador';
-  $('demo-worker-pending').textContent=`Pedidos de histórico enviados: ${d.requests.length}.`; 
+  $('demo-worker-pending').textContent=`Pedidos de histórico enviados: ${d.requests.filter(r=>r.status==='pending').length} aguardando aprovação.`; 
  }
  async function saveReading(e){e.preventDefault();
   const day=$('demo-reading-date').value;
@@ -124,7 +174,15 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup,
   const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='hidrocondo-DEMONSTRACAO.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
  }
  function shareDemo(){const s=demoSummary(ctx.data?.readings||[]);const t=`HIDROCONDO — DEMONSTRAÇÃO (DADOS FICTÍCIOS)\n${ctx.data.name}\nÚltima leitura: ${s.last?formatM3(toMillis(s.last.value_m3))+' m³':'sem dados'}\nConsumo no último período: ${s.last?.consumed!==null&&s.last?.consumed!==undefined?formatM3(s.last.consumed)+' m³':'indisponível'}\nEstes números são apenas de teste e não representam consumo real.`;if(navigator.share)navigator.share({text:t,title:'HidroCondo — DEMONSTRAÇÃO'}).catch(()=>navigator.clipboard?.writeText(t));else navigator.clipboard.writeText(t).then(()=>toast('Relatório demonstrativo copiado.')).catch(()=>toast(t));}
- async function leave(toSignup=false){const token=ctx.token;if(token)sessionStorage.removeItem(`hc_demo_accepted_${token}`);stop();history.replaceState({},'',homeUrl());const {data:{user}}=await db.auth.getUser();if(user?.is_anonymous){await db.auth.signOut();}await goHome();if(toSignup)startSignup();}
+ async function leave(toSignup=false){
+  const wasQuick=ctx.quick;
+  stop();history.replaceState({},'',homeUrl());
+  if(!wasQuick){const {data:{user}}=await db.auth.getUser();if(user?.is_anonymous){await db.auth.signOut();}}
+  // A quick demo intentionally has no Supabase client. Reload the regular app
+  // so that normal authentication can initialize, without carrying sandbox data.
+  if(wasQuick){location.assign(homeUrl()+(toSignup?'?cadastro=1':''));return;}
+  await goHome();if(toSignup)startSignup();
+ }
  async function showAdmin(){sessionStorage.setItem('hc_support_view','demo-admin');screens('demo-admin');$('demo-admin-new-links').hidden=true;await loadAdmin();tourOnce('demo-admin');}
  async function loadAdmin(){const rows=await rpc('hc_demo_list');
   $('demo-admin-list').innerHTML=rows.length?rows.map(r=>`<article class="demo-entry demo-admin-entry"><div><strong>${escape(r.name)}</strong><small>Criado: ${dateTime(r.created_at)} · Termina: ${dateTime(r.expires_at)} · ${demoStatus(r.expires_at,r.revoked)}</small></div><div class="demo-actions">${demoStatus(r.expires_at,r.revoked)==='Ativa'?`<button type="button" class="btn btn-primary btn-small" data-demo-show="${r.id}">🔗 Ver links</button><button type="button" class="btn btn-secondary btn-small" data-demo-end="${r.id}">Encerrar</button>`:''}</div></article>`).join(''):'<p class="help">Nenhuma demonstração criada. Crie um ambiente fictício para começar.</p>';
@@ -151,6 +209,13 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup,
   $('demo-admin-name').value='';await loadAdmin();toast('Demonstração criada. Você pode ver os links novamente nesta lista.');
  }
  function init(){
+  for(const button of document.querySelectorAll('[data-quick-role]'))button.addEventListener('click',()=>switchQuickRole(button.dataset.quickRole));
+  $('demo-copy-quick').addEventListener('click',()=>working(async()=>{
+    const link=quickDemoLink(homeUrl());
+    try{await navigator.clipboard.writeText(link);toast('Link único copiado! Não exige cadastro.');}
+    catch(e){$('demo-quick-link').value=link;$('demo-quick-link').select();toast('Copie o endereço selecionado.');}
+  }));
+  $('demo-quick-link').value=quickDemoLink(homeUrl());
   $('demo-accept').addEventListener('change',()=>{$('demo-enter').disabled=!$('demo-accept').checked;});
   $('demo-enter').addEventListener('click',()=>working(enter));
   $('demo-expired-signup').addEventListener('click',()=>working(()=>leave(true)));
@@ -174,5 +239,5 @@ export function makeDemoController({db,screens,toast,homeUrl,goHome,startSignup,
   $('demo-share').addEventListener('click',shareDemo);
   $('demo-print').addEventListener('click',()=>window.print());
  }
- return {init,welcome,showAdmin,stop,selectTab:demoTab,currentRole:()=>ctx.role};
+ return {init,welcome,showAdmin,stop,selectTab:demoTab,currentRole:()=>ctx.role,isQuick:()=>ctx.quick};
 }
